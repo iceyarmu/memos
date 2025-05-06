@@ -50,7 +50,7 @@ const Home = observer(() => {
     }
     return {
       filter: conditions.join(" && "),
-      isRandom
+      isRandom,
     };
   }, [user, memoFilterStore.filters, viewStore.state.orderByTimeAsc]);
 
@@ -61,10 +61,11 @@ const Home = observer(() => {
         memos
           .filter((memo) => memo.state === State.NORMAL)
           .sort((a, b) =>
-            isRandom ? Math.random() - 0.5 :
-            viewStore.state.orderByTimeAsc
-              ? dayjs(a.displayTime).unix() - dayjs(b.displayTime).unix()
-              : dayjs(b.displayTime).unix() - dayjs(a.displayTime).unix(),
+            isRandom
+              ? Math.random() - 0.5
+              : viewStore.state.orderByTimeAsc
+                ? dayjs(a.displayTime).unix() - dayjs(b.displayTime).unix()
+                : dayjs(b.displayTime).unix() - dayjs(a.displayTime).unix(),
           )
           .sort((a, b) => Number(b.pinned) - Number(a.pinned))
       }
