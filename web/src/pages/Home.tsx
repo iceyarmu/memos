@@ -14,10 +14,11 @@ const Home = observer(() => {
   const memoFilterStore = useMemoFilterStore();
   const selectedShortcut = userStore.state.shortcuts.find((shortcut) => shortcut.id === memoFilterStore.shortcut);
 
-  const memoListFilter = useMemo(() => {
+  const { filter: memoListFilter, isRandom } = useMemo(() => {
     const conditions = [];
     const contentSearch: string[] = [];
     const tagSearch: string[] = [];
+    let isRandom = false;
     for (const filter of memoFilterStore.filters) {
       if (filter.factor === "contentSearch") {
         contentSearch.push(`"${filter.value}"`);
@@ -37,6 +38,8 @@ const Home = observer(() => {
         const timestampAfter = filterUtcTimestamp / 1000;
         conditions.push(`display_time_after == ${timestampAfter}`);
         conditions.push(`display_time_before == ${timestampAfter + 60 * 60 * 24}`);
+      } else if (filter.factor === "random") {
+        isRandom = true;
       }
     }
     if (contentSearch.length > 0) {
@@ -45,7 +48,10 @@ const Home = observer(() => {
     if (tagSearch.length > 0) {
       conditions.push(`tag_search == [${tagSearch.join(", ")}]`);
     }
-    return conditions.join(" && ");
+    return {
+      filter: conditions.join(" && "),
+      isRandom
+    };
   }, [user, memoFilterStore.filters, viewStore.state.orderByTimeAsc]);
 
   return (
@@ -55,6 +61,7 @@ const Home = observer(() => {
         memos
           .filter((memo) => memo.state === State.NORMAL)
           .sort((a, b) =>
+            isRandom ? Math.random() - 0.5 :
             viewStore.state.orderByTimeAsc
               ? dayjs(a.displayTime).unix() - dayjs(b.displayTime).unix()
               : dayjs(b.displayTime).unix() - dayjs(a.displayTime).unix(),
