@@ -37,8 +37,8 @@ jobs:
         uses: docker/metadata-action@v5
         with:
           images: |
-            neosmemo/memos
-            ghcr.io/usememos/memos
+            yarmu/memos
+            ghcr.io/iceyarmu/memos
           flavor: |
             latest=false
           tags: |
