@@ -17,7 +17,7 @@ const RandomReview = observer(() => {
     const conditions = [];
     const contentSearch: string[] = [];
     const tagSearch: string[] = [];
-    let randomSeed: number = Math.floor(Math.random() * 0x100000000);
+    let randomSeed: number = parseInt((new Date().getTime() / 1000).toString());
     for (const filter of memoFilterStore.filters) {
       if (filter.factor === "contentSearch") {
         contentSearch.push(`"${filter.value}"`);
@@ -50,7 +50,7 @@ const RandomReview = observer(() => {
     return {
       filter: conditions.join(" && "),
       randomSeed,
-    }
+    };
   }, [user, memoFilterStore.filters, viewStore.state.orderByTimeAsc]);
 
   return (
