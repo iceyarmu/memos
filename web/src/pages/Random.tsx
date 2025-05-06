@@ -1,4 +1,3 @@
-import dayjs from "dayjs";
 import { observer } from "mobx-react-lite";
 import { useMemo } from "react";
 import MemoView from "@/components/MemoView";
@@ -14,10 +13,11 @@ const RandomReview = observer(() => {
   const memoFilterStore = useMemoFilterStore();
   const selectedShortcut = userStore.state.shortcuts.find((shortcut) => shortcut.id === memoFilterStore.shortcut);
 
-  const memoListFilter = useMemo(() => {
+  const { filter: memoListFilter, randomSeed } = useMemo(() => {
     const conditions = [];
     const contentSearch: string[] = [];
     const tagSearch: string[] = [];
+    let randomSeed: number = Math.floor(Math.random() * 0x100000000);
     for (const filter of memoFilterStore.filters) {
       if (filter.factor === "contentSearch") {
         contentSearch.push(`"${filter.value}"`);
@@ -37,6 +37,8 @@ const RandomReview = observer(() => {
         const timestampAfter = filterUtcTimestamp / 1000;
         conditions.push(`display_time_after == ${timestampAfter}`);
         conditions.push(`display_time_before == ${timestampAfter + 60 * 60 * 24}`);
+      } else if (filter.factor === "seed") {
+        randomSeed = parseInt(filter.value);
       }
     }
     if (contentSearch.length > 0) {
@@ -45,21 +47,21 @@ const RandomReview = observer(() => {
     if (tagSearch.length > 0) {
       conditions.push(`tag_search == [${tagSearch.join(", ")}]`);
     }
-    return conditions.join(" && ");
+    return {
+      filter: conditions.join(" && "),
+      randomSeed,
+    }
   }, [user, memoFilterStore.filters, viewStore.state.orderByTimeAsc]);
 
   return (
     <PagedMemoList
       renderer={(memo: Memo) => <MemoView key={`${memo.name}-${memo.displayTime}`} memo={memo} showVisibility showPinned compact />}
-      listSort={(memos: Memo[]) =>
-        memos
-          .filter((memo) => memo.state === State.NORMAL)
-          .sort((a, b) => Math.random() - 0.5)
-      }
+      listSort={(memos: Memo[]) => memos.filter((memo) => memo.state === State.NORMAL)}
       owner={user.name}
-      direction={viewStore.state.orderByTimeAsc ? Direction.ASC : Direction.DESC}
+      direction={Direction.DIRECTION_UNSPECIFIED}
       filter={selectedShortcut?.filter || ""}
       oldFilter={memoListFilter}
+      sort={"random:" + randomSeed}
     />
   );
 });

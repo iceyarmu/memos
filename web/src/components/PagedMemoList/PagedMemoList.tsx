@@ -25,6 +25,7 @@ interface Props {
   filter?: string;
   oldFilter?: string;
   pageSize?: number;
+  sort?: string;
 }
 
 interface LocalState {
@@ -54,6 +55,7 @@ const PagedMemoList = observer((props: Props) => {
       oldFilter: props.oldFilter || "",
       pageSize: props.pageSize || DEFAULT_LIST_MEMOS_PAGE_SIZE,
       pageToken: nextPageToken,
+      sort: props.sort || "",
     });
     setState(() => ({
       isRequesting: false,

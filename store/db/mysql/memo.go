@@ -147,6 +147,9 @@ func (d *DB) ListMemos(ctx context.Context, find *store.FindMemo) ([]*store.Memo
 	} else {
 		orderBy = append(orderBy, "`created_ts` "+order)
 	}
+	if find.OrderByRandomSeed != nil {
+		orderBy = []string{fmt.Sprintf("RAND(%d)", *find.OrderByRandomSeed)}
+	}
 	fields := []string{
 		"`memo`.`id` AS `id`",
 		"`memo`.`uid` AS `uid`",

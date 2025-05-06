@@ -4,6 +4,8 @@ import (
 	"context"
 	"fmt"
 	"log/slog"
+	"strconv"
+	"strings"
 	"time"
 	"unicode/utf8"
 
@@ -119,6 +121,12 @@ func (s *APIV1Service) ListMemos(ctx context.Context, request *v1pb.ListMemosReq
 	}
 	if request.Direction == v1pb.Direction_ASC {
 		memoFind.OrderByTimeAsc = true
+	}
+	if request.Direction == v1pb.Direction_DIRECTION_UNSPECIFIED && strings.HasPrefix(request.Sort, "random:") {
+		if randomSeed, err := strconv.ParseInt(request.Sort[7:], 10, 32); err == nil {
+			seed32 := int32(randomSeed)
+			memoFind.OrderByRandomSeed = &seed32
+		}
 	}
 	if request.Filter != "" {
 		if err := s.validateFilter(ctx, request.Filter); err != nil {
