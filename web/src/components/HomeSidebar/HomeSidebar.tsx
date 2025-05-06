@@ -46,7 +46,7 @@ const HomeSidebar = observer((props: Props) => {
   };
   const randomNavLink: NavLinkItem = {
     id: "header-random",
-    path: Routes.ROOT + "?random=true",
+    path: Routes.RANDOM,
     title: t("common.random-review"),
     icon: <DicesIcon className="w-4 h-auto opacity-70 shrink-0" />,
   };

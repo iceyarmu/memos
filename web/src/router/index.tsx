@@ -20,6 +20,7 @@ const SignIn = lazy(() => import("@/pages/SignIn"));
 const SignUp = lazy(() => import("@/pages/SignUp"));
 const UserProfile = lazy(() => import("@/pages/UserProfile"));
 const MemoDetailRedirect = lazy(() => import("./MemoDetailRedirect"));
+const RandomReview = lazy(() => import("@/pages/Random"));
 
 export enum Routes {
   ROOT = "/",
@@ -29,6 +30,7 @@ export enum Routes {
   SETTING = "/setting",
   EXPLORE = "/explore",
   AUTH = "/auth",
+  RANDOM = "/random",
 }
 
 const router = createBrowserRouter([
@@ -105,6 +107,14 @@ const router = createBrowserRouter([
                 element: (
                   <Suspense fallback={<Loading />}>
                     <UserProfile />
+                  </Suspense>
+                ),
+              },
+              {
+                path: Routes.RANDOM,
+                element: (
+                  <Suspense fallback={<Loading />}>
+                    <RandomReview />
                   </Suspense>
                 ),
               },

@@ -9,7 +9,7 @@ import { viewStore, userStore } from "@/store/v2";
 import { Direction, State } from "@/types/proto/api/v1/common";
 import { Memo } from "@/types/proto/api/v1/memo_service";
 
-const Home = observer(() => {
+const RandomReview = observer(() => {
   const user = useCurrentUser();
   const memoFilterStore = useMemoFilterStore();
   const selectedShortcut = userStore.state.shortcuts.find((shortcut) => shortcut.id === memoFilterStore.shortcut);
@@ -54,12 +54,7 @@ const Home = observer(() => {
       listSort={(memos: Memo[]) =>
         memos
           .filter((memo) => memo.state === State.NORMAL)
-          .sort((a, b) =>
-            viewStore.state.orderByTimeAsc
-              ? dayjs(a.displayTime).unix() - dayjs(b.displayTime).unix()
-              : dayjs(b.displayTime).unix() - dayjs(a.displayTime).unix(),
-          )
-          .sort((a, b) => Number(b.pinned) - Number(a.pinned))
+          .sort((a, b) => Math.random() - 0.5)
       }
       owner={user.name}
       direction={viewStore.state.orderByTimeAsc ? Direction.ASC : Direction.DESC}
@@ -69,4 +64,4 @@ const Home = observer(() => {
   );
 });
 
-export default Home;
+export default RandomReview;
