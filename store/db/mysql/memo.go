@@ -94,9 +94,24 @@ func (d *DB) ListMemos(ctx context.Context, find *store.FindMemo) ([]*store.Memo
 		if v.Raw != nil {
 			where, args = append(where, "`memo`.`payload` = ?"), append(args, *v.Raw)
 		}
+		// if len(v.TagSearch) != 0 {
+		// 	for _, tag := range v.TagSearch {
+		// 		where, args = append(where, "(JSON_CONTAINS(JSON_EXTRACT(`memo`.`payload`, '$.tags'), ?) OR JSON_SEARCH(JSON_EXTRACT(`memo`.`payload`, '$.tags'), 'one', CONCAT(?, '%')) IS NOT NULL)"), append(args, fmt.Sprintf(`"%s"`, tag), fmt.Sprintf(`"%s/"`, tag))
+		// 	}
+		// }
 		if len(v.TagSearch) != 0 {
 			for _, tag := range v.TagSearch {
-				where, args = append(where, "(JSON_CONTAINS(JSON_EXTRACT(`memo`.`payload`, '$.tags'), ?) OR JSON_SEARCH(JSON_EXTRACT(`memo`.`payload`, '$.tags'), 'one', CONCAT(?, '%')) IS NOT NULL)"), append(args, fmt.Sprintf(`"%s"`, tag), fmt.Sprintf(`"%s/"`, tag))
+				// SQL 查询片段本身是正确的
+				sqlFragment := "(JSON_CONTAINS(JSON_EXTRACT(`memo`.`payload`, '$.tags'), ?) OR JSON_SEARCH(JSON_EXTRACT(`memo`.`payload`, '$.tags'), 'one', CONCAT(?, '%')) IS NOT NULL)"
+
+				// 第一个参数：为 JSON_CONTAINS 准备，格式为 "\"tag\""
+				arg1 := fmt.Sprintf(`"%s"`, tag)
+
+				// 第二个参数：为 CONCAT 准备，格式为 "tag/" (不含外层多余的双引号)
+				arg2 := fmt.Sprintf("%s/", tag) // <--- 修改点在这里
+
+				where = append(where, sqlFragment)
+				args = append(args, arg1, arg2)
 			}
 		}
 		if v.HasLink {
