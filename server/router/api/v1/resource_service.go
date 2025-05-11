@@ -14,6 +14,7 @@ import (
 	"time"
 
 	"github.com/disintegration/imaging"
+	"github.com/gabriel-vasile/mimetype"
 	"github.com/lithammer/shortuuid/v4"
 	"github.com/pkg/errors"
 	"google.golang.org/genproto/googleapis/api/httpbody"
@@ -185,6 +186,16 @@ func (s *APIV1Service) GetResourceBinary(ctx context.Context, request *v1pb.GetR
 	}
 
 	contentType := resource.Type
+	if contentType == "" {
+		// If type is not set, detect it from file content
+		blob, err := s.GetResourceBlob(resource)
+		if err != nil {
+			return nil, status.Errorf(codes.Internal, "failed to get resource blob: %v", err)
+		}
+		mtype := mimetype.Detect(blob)
+		contentType = mtype.String()
+	}
+
 	if strings.HasPrefix(contentType, "text/") {
 		contentType += "; charset=utf-8"
 	}
