@@ -209,12 +209,42 @@ const MemoEditor = observer((props: Props) => {
     const { name: filename, size, type } = file;
     const buffer = new Uint8Array(await file.arrayBuffer());
 
+    // Fallback MIME type detection based on file extension if browser doesn't provide one
+    let mimeType = type;
+    if (!mimeType) {
+      const ext = filename.toLowerCase().split('.').pop();
+      switch (ext) {
+        case 'md':
+        case 'markdown':
+          mimeType = 'text/markdown';
+          break;
+        case 'txt':
+          mimeType = 'text/plain';
+          break;
+        case 'jpg':
+        case 'jpeg':
+          mimeType = 'image/jpeg';
+          break;
+        case 'png':
+          mimeType = 'image/png';
+          break;
+        case 'gif':
+          mimeType = 'image/gif';
+          break;
+        case 'pdf':
+          mimeType = 'application/pdf';
+          break;
+        default:
+          mimeType = 'application/octet-stream';
+      }
+    }
+
     try {
       const attachment = await attachmentStore.createAttachment({
         attachment: Attachment.fromPartial({
           filename,
           size,
-          type,
+          type: mimeType,
           content: buffer,
         }),
         attachmentId: "",
