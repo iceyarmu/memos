@@ -1,0 +1,11 @@
+services:
+  memos:
+    image: memos:canary
+    container_name: memos
+    network_mode: bridge
+    ports:
+      - "5230:5230"
+    volumes:
+      - /mnt/z:/var/opt/memos
+    command: ["--driver", "mysql", "--dsn", "root:Asdf1234!@tcp(192.168.1.6:3306)/memos_new"]
+    restart: always
