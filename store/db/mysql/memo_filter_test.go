@@ -17,13 +17,13 @@ func TestConvertExprToSQL(t *testing.T) {
 	}{
 		{
 			filter: `tag in ["tag1", "tag2"]`,
-			want:   "(JSON_CONTAINS(JSON_EXTRACT(`memo`.`payload`, '$.tags'), ?) OR JSON_CONTAINS(JSON_EXTRACT(`memo`.`payload`, '$.tags'), ?))",
-			args:   []any{`"tag1"`, `"tag2"`},
+			want:   "(JSON_SEARCH(JSON_EXTRACT(`memo`.`payload`, '$.tags'), 'one', ?) IS NOT NULL OR JSON_SEARCH(JSON_EXTRACT(`memo`.`payload`, '$.tags'), 'one', ?) IS NOT NULL)",
+			args:   []any{`tag1%`, `tag2%`},
 		},
 		{
 			filter: `!(tag in ["tag1", "tag2"])`,
-			want:   "NOT ((JSON_CONTAINS(JSON_EXTRACT(`memo`.`payload`, '$.tags'), ?) OR JSON_CONTAINS(JSON_EXTRACT(`memo`.`payload`, '$.tags'), ?)))",
-			args:   []any{`"tag1"`, `"tag2"`},
+			want:   "NOT ((JSON_SEARCH(JSON_EXTRACT(`memo`.`payload`, '$.tags'), 'one', ?) IS NOT NULL OR JSON_SEARCH(JSON_EXTRACT(`memo`.`payload`, '$.tags'), 'one', ?) IS NOT NULL))",
+			args:   []any{`tag1%`, `tag2%`},
 		},
 		{
 			filter: `content.contains("memos")`,
@@ -42,8 +42,8 @@ func TestConvertExprToSQL(t *testing.T) {
 		},
 		{
 			filter: `tag in ['tag1'] || content.contains('hello')`,
-			want:   "(JSON_CONTAINS(JSON_EXTRACT(`memo`.`payload`, '$.tags'), ?) OR `memo`.`content` LIKE ?)",
-			args:   []any{`"tag1"`, "%hello%"},
+			want:   "(JSON_SEARCH(JSON_EXTRACT(`memo`.`payload`, '$.tags'), 'one', ?) IS NOT NULL OR `memo`.`content` LIKE ?)",
+			args:   []any{`tag1%`, "%hello%"},
 		},
 		{
 			filter: `1`,
@@ -107,8 +107,8 @@ func TestConvertExprToSQL(t *testing.T) {
 		},
 		{
 			filter: `"work" in tags`,
-			want:   "JSON_CONTAINS(JSON_EXTRACT(`memo`.`payload`, '$.tags'), ?)",
-			args:   []any{"work"},
+			want:   "JSON_SEARCH(JSON_EXTRACT(`memo`.`payload`, '$.tags'), 'one', ?) IS NOT NULL",
+			args:   []any{"work%"},
 		},
 		{
 			filter: `size(tags) == 2`,
@@ -144,6 +144,22 @@ func TestConvertExprToSQL(t *testing.T) {
 			filter: `has_incomplete_tasks`,
 			want:   "JSON_EXTRACT(`memo`.`payload`, '$.property.hasIncompleteTasks') = CAST('true' AS JSON)",
 			args:   []any{},
+		},
+		// Test cases for prefix matching behavior
+		{
+			filter: `tag in ["a"]`,
+			want:   "JSON_SEARCH(JSON_EXTRACT(`memo`.`payload`, '$.tags'), 'one', ?) IS NOT NULL",
+			args:   []any{`a%`},
+		},
+		{
+			filter: `tag in ["work"]`,
+			want:   "JSON_SEARCH(JSON_EXTRACT(`memo`.`payload`, '$.tags'), 'one', ?) IS NOT NULL",
+			args:   []any{`work%`},
+		},
+		{
+			filter: `tag in ["work/project"]`,
+			want:   "JSON_SEARCH(JSON_EXTRACT(`memo`.`payload`, '$.tags'), 'one', ?) IS NOT NULL",
+			args:   []any{`work/project%`},
 		},
 	}
 
