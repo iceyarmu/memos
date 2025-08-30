@@ -97,6 +97,12 @@ func (s *APIV1Service) CreateMemo(ctx context.Context, request *v1pb.CreateMemoR
 	if err != nil {
 		return nil, errors.Wrap(err, "failed to convert memo")
 	}
+
+	// Fix parent id missing
+	if request.Memo.Parent != nil && memoMessage.Parent == nil {
+		memoMessage.Parent = request.Memo.Parent
+	}
+
 	// Try to dispatch webhook when memo is created.
 	if err := s.DispatchMemoCreatedWebhook(ctx, memoMessage); err != nil {
 		slog.Warn("Failed to dispatch memo created webhook", slog.Any("err", err))
@@ -527,6 +533,10 @@ func (s *APIV1Service) CreateMemoComment(ctx context.Context, request *v1pb.Crea
 	if err != nil {
 		return nil, status.Errorf(codes.Internal, "failed to get memo")
 	}
+
+	// Fix parent id missing
+	parent := "memos/" + memoUID
+	request.Comment.Parent = &parent
 
 	// Create the memo comment first.
 	memoComment, err := s.CreateMemo(ctx, &v1pb.CreateMemoRequest{Memo: request.Comment})
