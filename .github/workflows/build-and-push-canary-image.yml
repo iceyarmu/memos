@@ -40,7 +40,6 @@ jobs:
         uses: docker/metadata-action@v5
         with:
           images: |
-            iceyarmu/memos
             ghcr.io/iceyarmu/memos
           flavor: |
             latest=false

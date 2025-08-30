@@ -61,7 +61,6 @@ jobs:
         uses: docker/metadata-action@v5
         with:
           images: |
-            iceyarmu/memos
             ghcr.io/iceyarmu/memos
           tags: |
             type=semver,pattern={{version}},value=${{ env.VERSION }}
