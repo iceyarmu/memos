@@ -7,9 +7,13 @@ echo "=== Building Memos Docker Image ==="
 # Parse command line arguments
 RUN_COMPOSE=false
 MULTI_ARCH=false
+FRONT_END=false
 
 for arg in "$@"; do
     case $arg in
+        --frontend)
+            FRONT_END=true
+            ;;
         --run)
             RUN_COMPOSE=true
             ;;
@@ -27,13 +31,15 @@ if ! command -v pnpm &> /dev/null; then
 fi
 
 # Build frontend
-echo "=== Building Frontend ==="
-cd web/
-echo "Installing frontend dependencies..."
-pnpm install
-echo "Building frontend for production..."
-pnpm release
-cd ..
+if [ "$FRONT_END" == "true" ]; then
+    echo "=== Building Frontend ==="
+    cd web/
+    echo "Installing frontend dependencies..."
+    pnpm install
+    echo "Building frontend for production..."
+    pnpm release
+    cd ..
+fi
 
 # Build Docker image
 echo "=== Building Docker Image ==="
