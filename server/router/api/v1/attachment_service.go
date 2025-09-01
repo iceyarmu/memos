@@ -584,8 +584,9 @@ func replaceFilenameWithPathTemplate(path, filename, username string) string {
 			return util.GenUUID()
 		case "{username}":
 			return username
+		default:
+			return s
 		}
-		return s
 	})
 	return path
 }
