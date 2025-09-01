@@ -802,20 +802,25 @@ func (s *APIV1Service) getContentLengthLimit(ctx context.Context) (int, error) {
 
 // DispatchMemoCreatedWebhook dispatches webhook when memo is created.
 func (s *APIV1Service) DispatchMemoCreatedWebhook(ctx context.Context, memo *v1pb.Memo) error {
-	return s.dispatchMemoRelatedWebhook(ctx, memo, "memos.memo.created")
+	return s.dispatchMemoRelatedWebhook(ctx, memo, nil, "memos.memo.created")
 }
 
 // DispatchMemoUpdatedWebhook dispatches webhook when memo is updated.
 func (s *APIV1Service) DispatchMemoUpdatedWebhook(ctx context.Context, memo *v1pb.Memo) error {
-	return s.dispatchMemoRelatedWebhook(ctx, memo, "memos.memo.updated")
+	return s.dispatchMemoRelatedWebhook(ctx, memo, nil, "memos.memo.updated")
 }
 
 // DispatchMemoDeletedWebhook dispatches webhook when memo is deleted.
 func (s *APIV1Service) DispatchMemoDeletedWebhook(ctx context.Context, memo *v1pb.Memo) error {
-	return s.dispatchMemoRelatedWebhook(ctx, memo, "memos.memo.deleted")
+	return s.dispatchMemoRelatedWebhook(ctx, memo, nil, "memos.memo.deleted")
 }
 
-func (s *APIV1Service) dispatchMemoRelatedWebhook(ctx context.Context, memo *v1pb.Memo, activityType string) error {
+// DispatchMemoReactedWebhook dispatches webhook when memo is reacted.
+func (s *APIV1Service) DispatchMemoReactedWebhook(ctx context.Context, memo *v1pb.Memo, reaction *v1pb.Reaction) error {
+	return s.dispatchMemoRelatedWebhook(ctx, memo, reaction, "memos.memo.reacted")
+}
+
+func (s *APIV1Service) dispatchMemoRelatedWebhook(ctx context.Context, memo *v1pb.Memo, reaction *v1pb.Reaction, activityType string) error {
 	creatorID, err := ExtractUserIDFromName(memo.Creator)
 	if err != nil {
 		return status.Errorf(codes.InvalidArgument, "invalid memo creator")
@@ -825,7 +830,7 @@ func (s *APIV1Service) dispatchMemoRelatedWebhook(ctx context.Context, memo *v1p
 		return err
 	}
 	for _, hook := range webhooks {
-		payload, err := convertMemoToWebhookPayload(memo)
+		payload, err := convertMemoToWebhookPayload(memo, reaction)
 		if err != nil {
 			return errors.Wrap(err, "failed to convert memo to webhook payload")
 		}
@@ -838,14 +843,15 @@ func (s *APIV1Service) dispatchMemoRelatedWebhook(ctx context.Context, memo *v1p
 	return nil
 }
 
-func convertMemoToWebhookPayload(memo *v1pb.Memo) (*webhook.WebhookRequestPayload, error) {
+func convertMemoToWebhookPayload(memo *v1pb.Memo, reaction *v1pb.Reaction) (*webhook.WebhookRequestPayload, error) {
 	creatorID, err := ExtractUserIDFromName(memo.Creator)
 	if err != nil {
 		return nil, errors.Wrap(err, "invalid memo creator")
 	}
 	return &webhook.WebhookRequestPayload{
-		Creator: fmt.Sprintf("%s%d", UserNamePrefix, creatorID),
-		Memo:    memo,
+		Creator:  fmt.Sprintf("%s%d", UserNamePrefix, creatorID),
+		Memo:     memo,
+		Reaction: reaction,
 	}, nil
 }
 

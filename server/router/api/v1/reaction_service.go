@@ -3,6 +3,7 @@ package v1
 import (
 	"context"
 	"fmt"
+	"log/slog"
 	"time"
 
 	"google.golang.org/grpc/codes"
@@ -47,6 +48,16 @@ func (s *APIV1Service) UpsertMemoReaction(ctx context.Context, request *v1pb.Ups
 	}
 
 	reactionMessage := convertReactionFromStore(reaction)
+
+	// Try to dispatch webhook when reaction is created.
+	if memo, err := s.GetMemo(ctx, &v1pb.GetMemoRequest{Name: request.Reaction.ContentId}); err == nil {
+		if err := s.DispatchMemoReactedWebhook(ctx, memo, reactionMessage); err != nil {
+			// Log warning but don't fail the reaction creation
+			slog.Warn("Failed to dispatch memo reacted webhook", slog.Any("err", err))
+		}
+	} else {
+		slog.Warn("Failed to get memo for reaction webhook", slog.Any("err", err))
+	}
 
 	return reactionMessage, nil
 }

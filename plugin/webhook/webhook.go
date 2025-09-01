@@ -27,6 +27,8 @@ type WebhookRequestPayload struct {
 	Creator string `json:"creator"`
 	// The memo that triggered this webhook (if applicable).
 	Memo *v1pb.Memo `json:"memo"`
+	// The reaction that triggered this webhook (if applicable).
+	Reaction *v1pb.Reaction `json:"reaction"`
 }
 
 // Post posts the message to webhook endpoint.
