@@ -150,6 +150,12 @@ service UserService {
     option (google.api.http) = {delete: "/api/v1/{name=users/*/webhooks/*}"};
     option (google.api.method_signature) = "name";
   }
+
+  // ListUserTags returns a list of tags used by a specific user.
+  rpc ListUserTags(ListUserTagsRequest) returns (ListUserTagsResponse) {
+    option (google.api.http) = {get: "/api/v1/{parent=users/*}/tags"};
+    option (google.api.method_signature) = "parent";
+  }
 }
 
 message User {
@@ -665,4 +671,21 @@ message DeleteUserWebhookRequest {
   // The name of the webhook to delete.
   // Format: users/{user}/webhooks/{webhook}
   string name = 1 [(google.api.field_behavior) = REQUIRED];
+}
+
+message ListUserTagsRequest {
+  // Required. The name of the parent resource.
+  // Format: users/{user}
+  string parent = 1 [
+    (google.api.field_behavior) = REQUIRED,
+    (google.api.resource_reference) = {type: "memos.api.v1/User"}
+  ];
+}
+
+message ListUserTagsResponse {
+  // The user's tags, sorted by hierarchy and alphabetical order.
+  // For hierarchical tags using "/" as separator, parent tags come before
+  // child tags, and same-level tags are sorted alphabetically.
+  // Example: ["work", "work/project1", "work/project2", "personal", "personal/family"]
+  repeated string tags = 1;
 }

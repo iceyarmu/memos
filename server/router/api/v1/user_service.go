@@ -9,9 +9,11 @@ import (
 	"net/http"
 	"regexp"
 	"slices"
+	"sort"
 	"strconv"
 	"strings"
 	"time"
+	"unicode"
 
 	"github.com/golang-jwt/jwt/v5"
 	"github.com/labstack/echo/v4"
@@ -1374,4 +1376,139 @@ func (s *APIV1Service) validateUserFilter(_ context.Context, filterStr string) e
 		return errors.Wrap(err, "failed to convert filter to SQL")
 	}
 	return nil
+}
+
+// ListUserTags returns a list of tags used by a specific user.
+func (s *APIV1Service) ListUserTags(ctx context.Context, request *v1pb.ListUserTagsRequest) (*v1pb.ListUserTagsResponse, error) {
+	// Extract user ID from the parent resource name
+	userID, err := ExtractUserIDFromName(request.Parent)
+	if err != nil {
+		return nil, status.Errorf(codes.InvalidArgument, "invalid user name: %v", err)
+	}
+
+	// Get current user for permission checking
+	currentUser, err := s.GetCurrentUser(ctx)
+	if err != nil {
+		return nil, status.Errorf(codes.Internal, "failed to get user: %v", err)
+	}
+
+	// Set up memo query conditions
+	normalStatus := store.Normal
+	memoFind := &store.FindMemo{
+		CreatorID:       &userID,
+		ExcludeComments: true,
+		ExcludeContent:  true, // We don't need content, only payload
+		RowStatus:       &normalStatus,
+	}
+
+	// Set visibility filters based on current user permissions
+	if currentUser == nil {
+		// Not logged in - can only see public memos
+		memoFind.VisibilityList = []store.Visibility{store.Public}
+	} else if currentUser.ID != userID {
+		// Different user - can see public and protected memos
+		memoFind.VisibilityList = []store.Visibility{store.Public, store.Protected}
+	}
+	// If currentUser.ID == userID, no visibility filter needed (can see all own memos)
+
+	// Query memos
+	memos, err := s.Store.ListMemos(ctx, memoFind)
+	if err != nil {
+		return nil, status.Errorf(codes.Internal, "failed to list memos: %v", err)
+	}
+
+	// Extract and deduplicate tags
+	tagSet := make(map[string]bool)
+	for _, memo := range memos {
+		if memo.Payload != nil {
+			for _, tag := range memo.Payload.Tags {
+				if tag != "" { // Skip empty tags
+					tagSet[tag] = true
+				}
+			}
+		}
+	}
+
+	// Convert to sorted array
+	tags := make([]string, 0, len(tagSet))
+	for tag := range tagSet {
+		tags = append(tags, tag)
+	}
+
+	// Sort tags by hierarchy and alphabetical order
+	tags = sortTagsByHierarchy(tags)
+
+	return &v1pb.ListUserTagsResponse{
+		Tags: tags,
+	}, nil
+}
+
+// removeEmoji removes emoji and other special unicode characters from a string
+// while preserving regular text (including Chinese, Japanese, Korean characters)
+func removeEmoji(s string) string {
+	var result []rune
+	for _, r := range s {
+		// Skip emoji variation selectors and emoji-related characters
+		if (r >= 0xFE00 && r <= 0xFE0F) || // Variation selectors (including ️)
+			(r >= 0x200D && r <= 0x200D) || // Zero-width joiner
+			(r >= 0x20E3 && r <= 0x20E3) || // Combining enclosing keycap
+			(r >= 0x2600 && r <= 0x27BF) || // Misc symbols & dingbats
+			(r >= 0x1F000 && r <= 0x1F02F) || // Mahjong/Domino tiles  
+			(r >= 0x1F0A0 && r <= 0x1F0FF) || // Playing cards
+			(r >= 0x1F100 && r <= 0x1F1FF) || // Enclosed alphanumeric supplement
+			(r >= 0x1F300 && r <= 0x1F9FF) || // Emoticons, symbols, pictographs
+			(r >= 0x1FA70 && r <= 0x1FAFF) { // Extended-A symbols
+			continue
+		}
+		
+		// Keep letters, digits, spaces, and basic punctuation
+		if unicode.IsLetter(r) || unicode.IsDigit(r) || unicode.IsSpace(r) {
+			result = append(result, r)
+		} else if unicode.IsPunct(r) && r < 0x2000 { // Basic punctuation only
+			result = append(result, r)
+		}
+	}
+	return string(result)
+}
+
+// sortTagsByHierarchy sorts tags by hierarchy and alphabetical order.
+// For hierarchical tags using "/" as separator, parent tags come before
+// child tags, and same-level tags are sorted alphabetically.
+// Example: ["work", "work/project1", "work/project2", "personal", "personal/family"]
+func sortTagsByHierarchy(tags []string) []string {
+	sort.Slice(tags, func(i, j int) bool {
+		// Split tags by hierarchy separator
+		tagsI := strings.Split(tags[i], "/")
+		tagsJ := strings.Split(tags[j], "/")
+		
+		// Remove emoji for comparison
+		cleanTagsI := make([]string, len(tagsI))
+		cleanTagsJ := make([]string, len(tagsJ))
+		
+		for idx, tag := range tagsI {
+			cleanTagsI[idx] = removeEmoji(tag)
+		}
+		for idx, tag := range tagsJ {
+			cleanTagsJ[idx] = removeEmoji(tag)
+		}
+
+		// Compare each hierarchy level using cleaned tags
+		minLen := len(cleanTagsI)
+		if len(cleanTagsJ) < minLen {
+			minLen = len(cleanTagsJ)
+		}
+
+		for k := 0; k < minLen; k++ {
+			if cleanTagsI[k] != cleanTagsJ[k] {
+				// Different at this level - sort alphabetically using cleaned strings
+				return cleanTagsI[k] < cleanTagsJ[k]
+			}
+		}
+
+		// If all compared levels are the same, shorter path comes first
+		// This ensures parent tags come before child tags
+		return len(cleanTagsI) < len(cleanTagsJ)
+	})
+
+	return tags
 }

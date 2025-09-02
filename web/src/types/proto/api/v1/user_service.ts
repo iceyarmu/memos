@@ -576,6 +576,24 @@ export interface DeleteUserWebhookRequest {
   name: string;
 }
 
+export interface ListUserTagsRequest {
+  /**
+   * Required. The name of the parent resource.
+   * Format: users/{user}
+   */
+  parent: string;
+}
+
+export interface ListUserTagsResponse {
+  /**
+   * The user's tags, sorted by hierarchy and alphabetical order.
+   * For hierarchical tags using "/" as separator, parent tags come before
+   * child tags, and same-level tags are sorted alphabetically.
+   * Example: ["work", "work/project1", "work/project2", "personal", "personal/family"]
+   */
+  tags: string[];
+}
+
 function createBaseUser(): User {
   return {
     name: "",
@@ -3203,6 +3221,98 @@ export const DeleteUserWebhookRequest: MessageFns<DeleteUserWebhookRequest> = {
   },
 };
 
+function createBaseListUserTagsRequest(): ListUserTagsRequest {
+  return { parent: "" };
+}
+
+export const ListUserTagsRequest: MessageFns<ListUserTagsRequest> = {
+  encode(message: ListUserTagsRequest, writer: BinaryWriter = new BinaryWriter()): BinaryWriter {
+    if (message.parent !== "") {
+      writer.uint32(10).string(message.parent);
+    }
+    return writer;
+  },
+
+  decode(input: BinaryReader | Uint8Array, length?: number): ListUserTagsRequest {
+    const reader = input instanceof BinaryReader ? input : new BinaryReader(input);
+    let end = length === undefined ? reader.len : reader.pos + length;
+    const message = createBaseListUserTagsRequest();
+    while (reader.pos < end) {
+      const tag = reader.uint32();
+      switch (tag >>> 3) {
+        case 1: {
+          if (tag !== 10) {
+            break;
+          }
+
+          message.parent = reader.string();
+          continue;
+        }
+      }
+      if ((tag & 7) === 4 || tag === 0) {
+        break;
+      }
+      reader.skip(tag & 7);
+    }
+    return message;
+  },
+
+  create(base?: DeepPartial<ListUserTagsRequest>): ListUserTagsRequest {
+    return ListUserTagsRequest.fromPartial(base ?? {});
+  },
+  fromPartial(object: DeepPartial<ListUserTagsRequest>): ListUserTagsRequest {
+    const message = createBaseListUserTagsRequest();
+    message.parent = object.parent ?? "";
+    return message;
+  },
+};
+
+function createBaseListUserTagsResponse(): ListUserTagsResponse {
+  return { tags: [] };
+}
+
+export const ListUserTagsResponse: MessageFns<ListUserTagsResponse> = {
+  encode(message: ListUserTagsResponse, writer: BinaryWriter = new BinaryWriter()): BinaryWriter {
+    for (const v of message.tags) {
+      writer.uint32(10).string(v!);
+    }
+    return writer;
+  },
+
+  decode(input: BinaryReader | Uint8Array, length?: number): ListUserTagsResponse {
+    const reader = input instanceof BinaryReader ? input : new BinaryReader(input);
+    let end = length === undefined ? reader.len : reader.pos + length;
+    const message = createBaseListUserTagsResponse();
+    while (reader.pos < end) {
+      const tag = reader.uint32();
+      switch (tag >>> 3) {
+        case 1: {
+          if (tag !== 10) {
+            break;
+          }
+
+          message.tags.push(reader.string());
+          continue;
+        }
+      }
+      if ((tag & 7) === 4 || tag === 0) {
+        break;
+      }
+      reader.skip(tag & 7);
+    }
+    return message;
+  },
+
+  create(base?: DeepPartial<ListUserTagsResponse>): ListUserTagsResponse {
+    return ListUserTagsResponse.fromPartial(base ?? {});
+  },
+  fromPartial(object: DeepPartial<ListUserTagsResponse>): ListUserTagsResponse {
+    const message = createBaseListUserTagsResponse();
+    message.tags = object.tags?.map((e) => e) || [];
+    return message;
+  },
+};
+
 export type UserServiceDefinition = typeof UserServiceDefinition;
 export const UserServiceDefinition = {
   name: "UserService",
@@ -4304,6 +4414,55 @@ export const UserServiceDefinition = {
               47,
               42,
               125,
+            ]),
+          ],
+        },
+      },
+    },
+    /** ListUserTags returns a list of tags used by a specific user. */
+    listUserTags: {
+      name: "ListUserTags",
+      requestType: ListUserTagsRequest,
+      requestStream: false,
+      responseType: ListUserTagsResponse,
+      responseStream: false,
+      options: {
+        _unknownFields: {
+          8410: [new Uint8Array([6, 112, 97, 114, 101, 110, 116])],
+          578365826: [
+            new Uint8Array([
+              31,
+              18,
+              29,
+              47,
+              97,
+              112,
+              105,
+              47,
+              118,
+              49,
+              47,
+              123,
+              112,
+              97,
+              114,
+              101,
+              110,
+              116,
+              61,
+              117,
+              115,
+              101,
+              114,
+              115,
+              47,
+              42,
+              125,
+              47,
+              116,
+              97,
+              103,
+              115,
             ]),
           ],
         },

@@ -1818,6 +1818,32 @@ paths:
                         application/json:
                             schema:
                                 $ref: '#/components/schemas/Status'
+    /api/v1/users/{user}/tags:
+        get:
+            tags:
+                - UserService
+            description: ListUserTags returns a list of tags used by a specific user.
+            operationId: UserService_ListUserTags
+            parameters:
+                - name: user
+                  in: path
+                  description: The user id.
+                  required: true
+                  schema:
+                    type: string
+            responses:
+                "200":
+                    description: OK
+                    content:
+                        application/json:
+                            schema:
+                                $ref: '#/components/schemas/ListUserTagsResponse'
+                default:
+                    description: Default error response
+                    content:
+                        application/json:
+                            schema:
+                                $ref: '#/components/schemas/Status'
     /api/v1/users/{user}/webhooks:
         get:
             tags:
@@ -2705,6 +2731,14 @@ components:
                     description: The total count of settings (may be approximate).
                     format: int32
             description: Response message for ListUserSettings method.
+        ListUserTagsResponse:
+            type: object
+            properties:
+                tags:
+                    type: array
+                    items:
+                        type: string
+                    description: "The user's tags, sorted by hierarchy and alphabetical order.\r\n For hierarchical tags using \"/\" as separator, parent tags come before\r\n child tags, and same-level tags are sorted alphabetically.\r\n Example: [\"work\", \"work/project1\", \"work/project2\", \"personal\", \"personal/family\"]"
         ListUserWebhooksResponse:
             type: object
             properties:
