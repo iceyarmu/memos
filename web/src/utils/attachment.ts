@@ -1,11 +1,25 @@
 import { Attachment } from "@/types/proto/api/v1/attachment_service";
 
+const isIPAddress = (hostname: string): boolean => {
+  const ipv4Regex = /^(\d{1,3}\.){3}\d{1,3}$/;
+  const ipv6Regex = /^([\da-f]{1,4}:){7}[\da-f]{1,4}$/i;
+  const ipv6ShortRegex = /^::1$|^([a-f\d]{1,4}(:[a-f\d]{1,4})*)?::([a-f\d]{1,4}(:[a-f\d]{1,4})*)?$/i;
+  return ipv4Regex.test(hostname) || ipv6Regex.test(hostname) || ipv6ShortRegex.test(hostname);
+};
+
 export const getAttachmentUrl = (attachment: Attachment) => {
   if (attachment.externalLink) {
     return attachment.externalLink;
   }
 
-  return `${window.location.origin}/file/${attachment.name}/${attachment.filename}`;
+  const hostname = window.location.hostname;
+  const isIP = isIPAddress(hostname);
+
+  if (isIP) {
+    return `${window.location.origin}/file/${attachment.name}/${attachment.filename}`;
+  } else {
+    return `${window.location.origin}/files/${attachment.reference}`;
+  }
 };
 
 export const getAttachmentType = (attachment: Attachment) => {

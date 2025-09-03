@@ -37,7 +37,11 @@ export interface Attachment {
    * Optional. The related memo. Refer to `Memo.name`.
    * Format: memos/{memo}
    */
-  memo?: string | undefined;
+  memo?:
+    | string
+    | undefined;
+  /** Output only. The reference path of the attachment in storage. */
+  reference: string;
 }
 
 export interface CreateAttachmentRequest {
@@ -138,6 +142,7 @@ function createBaseAttachment(): Attachment {
     type: "",
     size: 0,
     memo: undefined,
+    reference: "",
   };
 }
 
@@ -166,6 +171,9 @@ export const Attachment: MessageFns<Attachment> = {
     }
     if (message.memo !== undefined) {
       writer.uint32(66).string(message.memo);
+    }
+    if (message.reference !== "") {
+      writer.uint32(74).string(message.reference);
     }
     return writer;
   },
@@ -241,6 +249,14 @@ export const Attachment: MessageFns<Attachment> = {
           message.memo = reader.string();
           continue;
         }
+        case 9: {
+          if (tag !== 74) {
+            break;
+          }
+
+          message.reference = reader.string();
+          continue;
+        }
       }
       if ((tag & 7) === 4 || tag === 0) {
         break;
@@ -263,6 +279,7 @@ export const Attachment: MessageFns<Attachment> = {
     message.type = object.type ?? "";
     message.size = object.size ?? 0;
     message.memo = object.memo ?? undefined;
+    message.reference = object.reference ?? "";
     return message;
   },
 };

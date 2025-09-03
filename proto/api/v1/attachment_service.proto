@@ -84,6 +84,9 @@ message Attachment {
   // Optional. The related memo. Refer to `Memo.name`.
   // Format: memos/{memo}
   optional string memo = 8 [(google.api.field_behavior) = OPTIONAL];
+
+  // Output only. The reference path of the attachment in storage.
+  string reference = 9 [(google.api.field_behavior) = OUTPUT_ONLY];
 }
 
 message CreateAttachmentRequest {

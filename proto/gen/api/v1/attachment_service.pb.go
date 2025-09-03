@@ -45,7 +45,9 @@ type Attachment struct {
 	Size int64 `protobuf:"varint,7,opt,name=size,proto3" json:"size,omitempty"`
 	// Optional. The related memo. Refer to `Memo.name`.
 	// Format: memos/{memo}
-	Memo          *string `protobuf:"bytes,8,opt,name=memo,proto3,oneof" json:"memo,omitempty"`
+	Memo *string `protobuf:"bytes,8,opt,name=memo,proto3,oneof" json:"memo,omitempty"`
+	// Output only. The reference path of the attachment in storage.
+	Reference     string `protobuf:"bytes,9,opt,name=reference,proto3" json:"reference,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
 }
@@ -132,6 +134,13 @@ func (x *Attachment) GetSize() int64 {
 func (x *Attachment) GetMemo() string {
 	if x != nil && x.Memo != nil {
 		return *x.Memo
+	}
+	return ""
+}
+
+func (x *Attachment) GetReference() string {
+	if x != nil {
+		return x.Reference
 	}
 	return ""
 }
@@ -549,7 +558,7 @@ var File_api_v1_attachment_service_proto protoreflect.FileDescriptor
 
 const file_api_v1_attachment_service_proto_rawDesc = "" +
 	"\n" +
-	"\x1fapi/v1/attachment_service.proto\x12\fmemos.api.v1\x1a\x1cgoogle/api/annotations.proto\x1a\x17google/api/client.proto\x1a\x1fgoogle/api/field_behavior.proto\x1a\x19google/api/httpbody.proto\x1a\x19google/api/resource.proto\x1a\x1bgoogle/protobuf/empty.proto\x1a google/protobuf/field_mask.proto\x1a\x1fgoogle/protobuf/timestamp.proto\"\xfb\x02\n" +
+	"\x1fapi/v1/attachment_service.proto\x12\fmemos.api.v1\x1a\x1cgoogle/api/annotations.proto\x1a\x17google/api/client.proto\x1a\x1fgoogle/api/field_behavior.proto\x1a\x19google/api/httpbody.proto\x1a\x19google/api/resource.proto\x1a\x1bgoogle/protobuf/empty.proto\x1a google/protobuf/field_mask.proto\x1a\x1fgoogle/protobuf/timestamp.proto\"\x9e\x03\n" +
 	"\n" +
 	"Attachment\x12\x17\n" +
 	"\x04name\x18\x01 \x01(\tB\x03\xe0A\bR\x04name\x12@\n" +
@@ -560,7 +569,8 @@ const file_api_v1_attachment_service_proto_rawDesc = "" +
 	"\rexternal_link\x18\x05 \x01(\tB\x03\xe0A\x01R\fexternalLink\x12\x17\n" +
 	"\x04type\x18\x06 \x01(\tB\x03\xe0A\x02R\x04type\x12\x17\n" +
 	"\x04size\x18\a \x01(\x03B\x03\xe0A\x03R\x04size\x12\x1c\n" +
-	"\x04memo\x18\b \x01(\tB\x03\xe0A\x01H\x00R\x04memo\x88\x01\x01:O\xeaAL\n" +
+	"\x04memo\x18\b \x01(\tB\x03\xe0A\x01H\x00R\x04memo\x88\x01\x01\x12!\n" +
+	"\treference\x18\t \x01(\tB\x03\xe0A\x03R\treference:O\xeaAL\n" +
 	"\x17memos.api.v1/Attachment\x12\x18attachments/{attachment}*\vattachments2\n" +
 	"attachmentB\a\n" +
 	"\x05_memo\"\x82\x01\n" +
