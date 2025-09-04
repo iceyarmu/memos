@@ -3,6 +3,7 @@
 set -e
 
 echo "=== Building Memos Docker Image ==="
+export http_proxy="http://192.168.1.6:10808" https_proxy="http://192.168.1.6:10808" no_proxy="127.0.0.1,localhost,192.168.0.0/16,::1"
 
 # Parse command line arguments
 RUN_COMPOSE=false
