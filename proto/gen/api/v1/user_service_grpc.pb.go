@@ -37,6 +37,7 @@ const (
 	UserService_CreateUserWebhook_FullMethodName         = "/memos.api.v1.UserService/CreateUserWebhook"
 	UserService_UpdateUserWebhook_FullMethodName         = "/memos.api.v1.UserService/UpdateUserWebhook"
 	UserService_DeleteUserWebhook_FullMethodName         = "/memos.api.v1.UserService/DeleteUserWebhook"
+	UserService_ListUserTags_FullMethodName              = "/memos.api.v1.UserService/ListUserTags"
 	UserService_ListUserNotifications_FullMethodName     = "/memos.api.v1.UserService/ListUserNotifications"
 	UserService_UpdateUserNotification_FullMethodName    = "/memos.api.v1.UserService/UpdateUserNotification"
 	UserService_DeleteUserNotification_FullMethodName    = "/memos.api.v1.UserService/DeleteUserNotification"
@@ -85,6 +86,8 @@ type UserServiceClient interface {
 	UpdateUserWebhook(ctx context.Context, in *UpdateUserWebhookRequest, opts ...grpc.CallOption) (*UserWebhook, error)
 	// DeleteUserWebhook deletes a webhook for a user.
 	DeleteUserWebhook(ctx context.Context, in *DeleteUserWebhookRequest, opts ...grpc.CallOption) (*emptypb.Empty, error)
+	// ListUserTags returns a list of tags used by a specific user.
+	ListUserTags(ctx context.Context, in *ListUserTagsRequest, opts ...grpc.CallOption) (*ListUserTagsResponse, error)
 	// ListUserNotifications lists notifications for a user.
 	ListUserNotifications(ctx context.Context, in *ListUserNotificationsRequest, opts ...grpc.CallOption) (*ListUserNotificationsResponse, error)
 	// UpdateUserNotification updates a notification.
@@ -271,6 +274,16 @@ func (c *userServiceClient) DeleteUserWebhook(ctx context.Context, in *DeleteUse
 	return out, nil
 }
 
+func (c *userServiceClient) ListUserTags(ctx context.Context, in *ListUserTagsRequest, opts ...grpc.CallOption) (*ListUserTagsResponse, error) {
+	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
+	out := new(ListUserTagsResponse)
+	err := c.cc.Invoke(ctx, UserService_ListUserTags_FullMethodName, in, out, cOpts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
 func (c *userServiceClient) ListUserNotifications(ctx context.Context, in *ListUserNotificationsRequest, opts ...grpc.CallOption) (*ListUserNotificationsResponse, error) {
 	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
 	out := new(ListUserNotificationsResponse)
@@ -344,6 +357,8 @@ type UserServiceServer interface {
 	UpdateUserWebhook(context.Context, *UpdateUserWebhookRequest) (*UserWebhook, error)
 	// DeleteUserWebhook deletes a webhook for a user.
 	DeleteUserWebhook(context.Context, *DeleteUserWebhookRequest) (*emptypb.Empty, error)
+	// ListUserTags returns a list of tags used by a specific user.
+	ListUserTags(context.Context, *ListUserTagsRequest) (*ListUserTagsResponse, error)
 	// ListUserNotifications lists notifications for a user.
 	ListUserNotifications(context.Context, *ListUserNotificationsRequest) (*ListUserNotificationsResponse, error)
 	// UpdateUserNotification updates a notification.
@@ -410,6 +425,9 @@ func (UnimplementedUserServiceServer) UpdateUserWebhook(context.Context, *Update
 }
 func (UnimplementedUserServiceServer) DeleteUserWebhook(context.Context, *DeleteUserWebhookRequest) (*emptypb.Empty, error) {
 	return nil, status.Error(codes.Unimplemented, "method DeleteUserWebhook not implemented")
+}
+func (UnimplementedUserServiceServer) ListUserTags(context.Context, *ListUserTagsRequest) (*ListUserTagsResponse, error) {
+	return nil, status.Error(codes.Unimplemented, "method ListUserTags not implemented")
 }
 func (UnimplementedUserServiceServer) ListUserNotifications(context.Context, *ListUserNotificationsRequest) (*ListUserNotificationsResponse, error) {
 	return nil, status.Error(codes.Unimplemented, "method ListUserNotifications not implemented")
@@ -747,6 +765,24 @@ func _UserService_DeleteUserWebhook_Handler(srv interface{}, ctx context.Context
 	return interceptor(ctx, in, info, handler)
 }
 
+func _UserService_ListUserTags_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(ListUserTagsRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(UserServiceServer).ListUserTags(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: UserService_ListUserTags_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(UserServiceServer).ListUserTags(ctx, req.(*ListUserTagsRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
 func _UserService_ListUserNotifications_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
 	in := new(ListUserNotificationsRequest)
 	if err := dec(in); err != nil {
@@ -875,6 +911,10 @@ var UserService_ServiceDesc = grpc.ServiceDesc{
 		{
 			MethodName: "DeleteUserWebhook",
 			Handler:    _UserService_DeleteUserWebhook_Handler,
+		},
+		{
+			MethodName: "ListUserTags",
+			Handler:    _UserService_ListUserTags_Handler,
 		},
 		{
 			MethodName: "ListUserNotifications",

@@ -1509,7 +1509,7 @@ func (s *APIV1Service) ListUserTags(ctx context.Context, request *v1pb.ListUserT
 }
 
 // removeEmoji removes emoji and other special unicode characters from a string
-// while preserving regular text (including Chinese, Japanese, Korean characters)
+// while preserving regular text (including Chinese, Japanese, Korean characters).
 func removeEmoji(s string) string {
 	var result []rune
 	for _, r := range s {
@@ -1518,14 +1518,14 @@ func removeEmoji(s string) string {
 			(r >= 0x200D && r <= 0x200D) || // Zero-width joiner
 			(r >= 0x20E3 && r <= 0x20E3) || // Combining enclosing keycap
 			(r >= 0x2600 && r <= 0x27BF) || // Misc symbols & dingbats
-			(r >= 0x1F000 && r <= 0x1F02F) || // Mahjong/Domino tiles  
+			(r >= 0x1F000 && r <= 0x1F02F) || // Mahjong/Domino tiles
 			(r >= 0x1F0A0 && r <= 0x1F0FF) || // Playing cards
 			(r >= 0x1F100 && r <= 0x1F1FF) || // Enclosed alphanumeric supplement
 			(r >= 0x1F300 && r <= 0x1F9FF) || // Emoticons, symbols, pictographs
 			(r >= 0x1FA70 && r <= 0x1FAFF) { // Extended-A symbols
 			continue
 		}
-		
+
 		// Keep letters, digits, spaces, and basic punctuation
 		if unicode.IsLetter(r) || unicode.IsDigit(r) || unicode.IsSpace(r) {
 			result = append(result, r)
@@ -1539,17 +1539,17 @@ func removeEmoji(s string) string {
 // sortTagsByHierarchy sorts tags by hierarchy and alphabetical order.
 // For hierarchical tags using "/" as separator, parent tags come before
 // child tags, and same-level tags are sorted alphabetically.
-// Example: ["work", "work/project1", "work/project2", "personal", "personal/family"]
+// Example: ["work", "work/project1", "work/project2", "personal", "personal/family"].
 func sortTagsByHierarchy(tags []string) []string {
 	sort.Slice(tags, func(i, j int) bool {
 		// Split tags by hierarchy separator
 		tagsI := strings.Split(tags[i], "/")
 		tagsJ := strings.Split(tags[j], "/")
-		
+
 		// Remove emoji for comparison
 		cleanTagsI := make([]string, len(tagsI))
 		cleanTagsJ := make([]string, len(tagsJ))
-		
+
 		for idx, tag := range tagsI {
 			cleanTagsI[idx] = removeEmoji(tag)
 		}

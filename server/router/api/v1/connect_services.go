@@ -207,6 +207,14 @@ func (s *ConnectServiceHandler) DeleteUserWebhook(ctx context.Context, req *conn
 	return connect.NewResponse(resp), nil
 }
 
+func (s *ConnectServiceHandler) ListUserTags(ctx context.Context, req *connect.Request[v1pb.ListUserTagsRequest]) (*connect.Response[v1pb.ListUserTagsResponse], error) {
+	resp, err := s.APIV1Service.ListUserTags(ctx, req.Msg)
+	if err != nil {
+		return nil, convertGRPCError(err)
+	}
+	return connect.NewResponse(resp), nil
+}
+
 func (s *ConnectServiceHandler) ListUserNotifications(ctx context.Context, req *connect.Request[v1pb.ListUserNotificationsRequest]) (*connect.Response[v1pb.ListUserNotificationsResponse], error) {
 	resp, err := s.APIV1Service.ListUserNotifications(ctx, req.Msg)
 	if err != nil {

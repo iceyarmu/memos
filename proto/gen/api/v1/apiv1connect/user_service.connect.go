@@ -80,6 +80,9 @@ const (
 	// UserServiceDeleteUserWebhookProcedure is the fully-qualified name of the UserService's
 	// DeleteUserWebhook RPC.
 	UserServiceDeleteUserWebhookProcedure = "/memos.api.v1.UserService/DeleteUserWebhook"
+	// UserServiceListUserTagsProcedure is the fully-qualified name of the UserService's ListUserTags
+	// RPC.
+	UserServiceListUserTagsProcedure = "/memos.api.v1.UserService/ListUserTags"
 	// UserServiceListUserNotificationsProcedure is the fully-qualified name of the UserService's
 	// ListUserNotifications RPC.
 	UserServiceListUserNotificationsProcedure = "/memos.api.v1.UserService/ListUserNotifications"
@@ -132,6 +135,8 @@ type UserServiceClient interface {
 	UpdateUserWebhook(context.Context, *connect.Request[v1.UpdateUserWebhookRequest]) (*connect.Response[v1.UserWebhook], error)
 	// DeleteUserWebhook deletes a webhook for a user.
 	DeleteUserWebhook(context.Context, *connect.Request[v1.DeleteUserWebhookRequest]) (*connect.Response[emptypb.Empty], error)
+	// ListUserTags returns a list of tags used by a specific user.
+	ListUserTags(context.Context, *connect.Request[v1.ListUserTagsRequest]) (*connect.Response[v1.ListUserTagsResponse], error)
 	// ListUserNotifications lists notifications for a user.
 	ListUserNotifications(context.Context, *connect.Request[v1.ListUserNotificationsRequest]) (*connect.Response[v1.ListUserNotificationsResponse], error)
 	// UpdateUserNotification updates a notification.
@@ -253,6 +258,12 @@ func NewUserServiceClient(httpClient connect.HTTPClient, baseURL string, opts ..
 			connect.WithSchema(userServiceMethods.ByName("DeleteUserWebhook")),
 			connect.WithClientOptions(opts...),
 		),
+		listUserTags: connect.NewClient[v1.ListUserTagsRequest, v1.ListUserTagsResponse](
+			httpClient,
+			baseURL+UserServiceListUserTagsProcedure,
+			connect.WithSchema(userServiceMethods.ByName("ListUserTags")),
+			connect.WithClientOptions(opts...),
+		),
 		listUserNotifications: connect.NewClient[v1.ListUserNotificationsRequest, v1.ListUserNotificationsResponse](
 			httpClient,
 			baseURL+UserServiceListUserNotificationsProcedure,
@@ -293,6 +304,7 @@ type userServiceClient struct {
 	createUserWebhook         *connect.Client[v1.CreateUserWebhookRequest, v1.UserWebhook]
 	updateUserWebhook         *connect.Client[v1.UpdateUserWebhookRequest, v1.UserWebhook]
 	deleteUserWebhook         *connect.Client[v1.DeleteUserWebhookRequest, emptypb.Empty]
+	listUserTags              *connect.Client[v1.ListUserTagsRequest, v1.ListUserTagsResponse]
 	listUserNotifications     *connect.Client[v1.ListUserNotificationsRequest, v1.ListUserNotificationsResponse]
 	updateUserNotification    *connect.Client[v1.UpdateUserNotificationRequest, v1.UserNotification]
 	deleteUserNotification    *connect.Client[v1.DeleteUserNotificationRequest, emptypb.Empty]
@@ -383,6 +395,11 @@ func (c *userServiceClient) DeleteUserWebhook(ctx context.Context, req *connect.
 	return c.deleteUserWebhook.CallUnary(ctx, req)
 }
 
+// ListUserTags calls memos.api.v1.UserService.ListUserTags.
+func (c *userServiceClient) ListUserTags(ctx context.Context, req *connect.Request[v1.ListUserTagsRequest]) (*connect.Response[v1.ListUserTagsResponse], error) {
+	return c.listUserTags.CallUnary(ctx, req)
+}
+
 // ListUserNotifications calls memos.api.v1.UserService.ListUserNotifications.
 func (c *userServiceClient) ListUserNotifications(ctx context.Context, req *connect.Request[v1.ListUserNotificationsRequest]) (*connect.Response[v1.ListUserNotificationsResponse], error) {
 	return c.listUserNotifications.CallUnary(ctx, req)
@@ -439,6 +456,8 @@ type UserServiceHandler interface {
 	UpdateUserWebhook(context.Context, *connect.Request[v1.UpdateUserWebhookRequest]) (*connect.Response[v1.UserWebhook], error)
 	// DeleteUserWebhook deletes a webhook for a user.
 	DeleteUserWebhook(context.Context, *connect.Request[v1.DeleteUserWebhookRequest]) (*connect.Response[emptypb.Empty], error)
+	// ListUserTags returns a list of tags used by a specific user.
+	ListUserTags(context.Context, *connect.Request[v1.ListUserTagsRequest]) (*connect.Response[v1.ListUserTagsResponse], error)
 	// ListUserNotifications lists notifications for a user.
 	ListUserNotifications(context.Context, *connect.Request[v1.ListUserNotificationsRequest]) (*connect.Response[v1.ListUserNotificationsResponse], error)
 	// UpdateUserNotification updates a notification.
@@ -556,6 +575,12 @@ func NewUserServiceHandler(svc UserServiceHandler, opts ...connect.HandlerOption
 		connect.WithSchema(userServiceMethods.ByName("DeleteUserWebhook")),
 		connect.WithHandlerOptions(opts...),
 	)
+	userServiceListUserTagsHandler := connect.NewUnaryHandler(
+		UserServiceListUserTagsProcedure,
+		svc.ListUserTags,
+		connect.WithSchema(userServiceMethods.ByName("ListUserTags")),
+		connect.WithHandlerOptions(opts...),
+	)
 	userServiceListUserNotificationsHandler := connect.NewUnaryHandler(
 		UserServiceListUserNotificationsProcedure,
 		svc.ListUserNotifications,
@@ -610,6 +635,8 @@ func NewUserServiceHandler(svc UserServiceHandler, opts ...connect.HandlerOption
 			userServiceUpdateUserWebhookHandler.ServeHTTP(w, r)
 		case UserServiceDeleteUserWebhookProcedure:
 			userServiceDeleteUserWebhookHandler.ServeHTTP(w, r)
+		case UserServiceListUserTagsProcedure:
+			userServiceListUserTagsHandler.ServeHTTP(w, r)
 		case UserServiceListUserNotificationsProcedure:
 			userServiceListUserNotificationsHandler.ServeHTTP(w, r)
 		case UserServiceUpdateUserNotificationProcedure:
@@ -691,6 +718,10 @@ func (UnimplementedUserServiceHandler) UpdateUserWebhook(context.Context, *conne
 
 func (UnimplementedUserServiceHandler) DeleteUserWebhook(context.Context, *connect.Request[v1.DeleteUserWebhookRequest]) (*connect.Response[emptypb.Empty], error) {
 	return nil, connect.NewError(connect.CodeUnimplemented, errors.New("memos.api.v1.UserService.DeleteUserWebhook is not implemented"))
+}
+
+func (UnimplementedUserServiceHandler) ListUserTags(context.Context, *connect.Request[v1.ListUserTagsRequest]) (*connect.Response[v1.ListUserTagsResponse], error) {
+	return nil, connect.NewError(connect.CodeUnimplemented, errors.New("memos.api.v1.UserService.ListUserTags is not implemented"))
 }
 
 func (UnimplementedUserServiceHandler) ListUserNotifications(context.Context, *connect.Request[v1.ListUserNotificationsRequest]) (*connect.Response[v1.ListUserNotificationsResponse], error) {
