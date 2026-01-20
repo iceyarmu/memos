@@ -251,21 +251,6 @@
       "title": "アクセストークン",
       "token": "トークン"
     },
-    "user-sessions-section": {
-      "title": "アクティブセッション",
-      "description": "あなたのアカウントのすべてのアクティブなセッション一覧です。セッションは最後の操作から2週間後に自動的に期限切れになります。現在のセッション以外は取り消し可能です。",
-      "device": "デバイス",
-      "location": "場所",
-      "last-active": "最終アクティブ",
-      "expires": "有効期限",
-      "current": "現在",
-      "never": "無期限",
-      "session-revocation": "セッション {{sessionId}} を取り消しますか？そのデバイスで再度サインインが必要です。",
-      "session-revoked": "セッションを取り消しました",
-      "revoke-session": "セッションを取り消す",
-      "cannot-revoke-current": "現在のセッションは取り消せません",
-      "no-sessions": "アクティブなセッションはありません"
-    },
     "account-section": {
       "change-password": "パスワードを変更",
       "email-note": "オプション",
@@ -294,7 +279,6 @@
     "memo-related-settings": {
       "content-lenght-limit": "内容の最大長（バイト）",
       "enable-blur-nsfw-content": "センシティブ(NSFW)内容のぼかしを有効化",
-      "enable-link-preview": "リンクプレビューを有効化",
       "enable-memo-comments": "メモコメントを有効化",
       "enable-memo-location": "メモの位置情報を有効化",
       "reactions": "リアクション",
@@ -380,7 +364,6 @@
         "locale": "サーバーのロケール",
         "title": "サーバーをカスタマイズ"
       },
-      "disable-markdown-shortcuts-in-editor": "エディタでMarkdownショートカットを無効化",
       "disable-password-login": "パスワードログインを無効化",
       "disable-password-login-final-warning": "「CONFIRM」と入力してください（自己責任）",
       "disable-password-login-warning": "これにより全ユーザーのパスワードログインが無効になります。IDプロバイダーが失敗した場合、DBでこの設定を戻さないとログインできません。IDプロバイダー削除時はご注意ください。",
@@ -410,7 +393,7 @@
       "title": "Webhooks",
       "url": "URL"
     },
-    "workspace-section": {
+    "instance-section": {
       "disallow-change-nickname": "ニックネーム変更を禁止",
       "disallow-change-username": "ユーザー名変更を禁止",
       "disallow-password-auth": "パスワード認証を禁止",

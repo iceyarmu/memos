@@ -247,21 +247,6 @@
       "title": "Tokens de acceso",
       "token": "Token"
     },
-    "user-sessions-section": {
-      "title": "Sesiones activas",
-      "description": "Lista de todas las sesiones activas de tu cuenta. Las sesiones expiran automáticamente 2 semanas después de la última actividad. Puedes revocar cualquier sesión excepto la actual.",
-      "device": "Dispositivo",
-      "location": "Ubicación",
-      "last-active": "Última actividad",
-      "expires": "Expira",
-      "current": "Actual",
-      "never": "Nunca",
-      "session-revocation": "¿Estás seguro de revocar la sesión {{sessionId}}? Deberás iniciar sesión de nuevo en ese dispositivo.",
-      "session-revoked": "Sesión revocada correctamente",
-      "revoke-session": "Revocar sesión",
-      "cannot-revoke-current": "No se puede revocar la sesión actual",
-      "no-sessions": "No se encontraron sesiones activas"
-    },
     "account-section": {
       "change-password": "Cambiar contraseña",
       "email-note": "Opcional",
@@ -290,7 +275,6 @@
     "memo-related-settings": {
       "content-lenght-limit": "Límite de longitud de contenido (Bytes)",
       "enable-blur-nsfw-content": "Habilitar difuminado de contenido sensible (NSFW)",
-      "enable-link-preview": "Habilitar vista previa de enlaces",
       "enable-memo-comments": "Habilitar comentarios en los memos",
       "enable-memo-location": "Habilitar ubicación del memo",
       "reactions": "Reacciones",
@@ -376,7 +360,6 @@
         "locale": "Idioma del servidor",
         "title": "Personalizar servidor"
       },
-      "disable-markdown-shortcuts-in-editor": "Desactivar atajos de Markdown en el editor",
       "disable-password-login": "Desactivar inicio de sesión con contraseña",
       "disable-password-login-final-warning": "Por favor escribe \"CONFIRM\" si sabes lo que haces.",
       "disable-password-login-warning": "Esto deshabilitará el inicio de sesión con contraseña para todos los usuarios. No será posible iniciar sesión sin revertir esta configuración en la base de datos si tus proveedores de identidad fallan. Debes tener especial cuidado al eliminar un proveedor de identidad",
@@ -406,7 +389,7 @@
       "title": "Webhooks",
       "url": "URL"
     },
-    "workspace-section": {
+    "instance-section": {
       "disallow-change-nickname": "No permitir cambiar apodo",
       "disallow-change-username": "No permitir cambiar nombre de usuario",
       "disallow-password-auth": "No permitir autenticación por contraseña",

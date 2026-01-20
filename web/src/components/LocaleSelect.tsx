@@ -2,6 +2,7 @@ import { GlobeIcon } from "lucide-react";
 import { FC } from "react";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { locales } from "@/i18n";
+import { getLocaleDisplayName, loadLocale } from "@/utils/i18n";
 
 interface Props {
   value: Locale;
@@ -12,6 +13,9 @@ const LocaleSelect: FC<Props> = (props: Props) => {
   const { onChange, value } = props;
 
   const handleSelectChange = async (locale: Locale) => {
+    // Apply locale globally immediately
+    loadLocale(locale);
+    // Also notify parent component
     onChange(locale);
   };
 
@@ -24,26 +28,11 @@ const LocaleSelect: FC<Props> = (props: Props) => {
         </div>
       </SelectTrigger>
       <SelectContent>
-        {locales.map((locale) => {
-          try {
-            const languageName = new Intl.DisplayNames([locale], { type: "language" }).of(locale);
-            if (languageName) {
-              return (
-                <SelectItem key={locale} value={locale}>
-                  {languageName.charAt(0).toUpperCase() + languageName.slice(1)}
-                </SelectItem>
-              );
-            }
-          } catch {
-            // do nth
-          }
-
-          return (
-            <SelectItem key={locale} value={locale}>
-              {locale}
-            </SelectItem>
-          );
-        })}
+        {locales.map((locale) => (
+          <SelectItem key={locale} value={locale}>
+            {getLocaleDisplayName(locale)}
+          </SelectItem>
+        ))}
       </SelectContent>
     </Select>
   );

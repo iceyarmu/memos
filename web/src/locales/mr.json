@@ -251,21 +251,6 @@
       "title": "ऍक्सेस टोकन्स",
       "token": "टोकन"
     },
-    "user-sessions-section": {
-      "title": "सक्रिय सत्रे",
-      "description": "तुमच्या खात्यातील सर्व सक्रिय सत्रांची यादी. सत्रे शेवटच्या क्रियेनंतर 2 आठवड्यांनी आपोआप कालबाह्य होतात. तुम्ही चालू सत्र वगळता कोणतेही सत्र रद्द करू शकता.",
-      "device": "डिव्हाइस",
-      "location": "स्थान",
-      "last-active": "शेवटचे सक्रिय",
-      "expires": "कालबाह्यता",
-      "current": "चालू",
-      "never": "कधीच नाही",
-      "session-revocation": "तुम्हाला सत्र {{sessionId}} रद्द करायचे आहे का? त्या डिव्हाइसवर पुन्हा साइन इन करावे लागेल.",
-      "session-revoked": "सत्र यशस्वीरित्या रद्द केले",
-      "revoke-session": "सत्र रद्द करा",
-      "cannot-revoke-current": "चालू सत्र रद्द करता येणार नाही",
-      "no-sessions": "कोणतीही सक्रिय सत्रे आढळली नाहीत"
-    },
     "account-section": {
       "change-password": "पासवर्ड बदला",
       "email-note": "ऐच्छिक",
@@ -294,7 +279,6 @@
     "memo-related-settings": {
       "content-lenght-limit": "सामग्रीची कमाल लांबी (बाइट)",
       "enable-blur-nsfw-content": "संवेदनशील (NSFW) सामग्री ब्लर करा सक्षम करा",
-      "enable-link-preview": "लिंक पूर्वावलोकन सक्षम करा",
       "enable-memo-comments": "मेमो टिप्पण्या सक्षम करा",
       "enable-memo-location": "मेमो स्थान सक्षम करा",
       "reactions": "प्रतिक्रिया",
@@ -380,7 +364,6 @@
         "locale": "सर्व्हर लोकेल",
         "title": "सर्व्हर सानुकूलित करा"
       },
-      "disable-markdown-shortcuts-in-editor": "एडिटरमध्ये Markdown शॉर्टकट अक्षम करा",
       "disable-password-login": "पासवर्ड लॉगिन अक्षम करा",
       "disable-password-login-final-warning": "तुम्ही काय करत आहात हे तुम्हाला माहीत असल्यास कृपया \"CONFIRM\" टाइप करा.",
       "disable-password-login-warning": "हे सर्व वापरकर्त्यांसाठी पासवर्ड लॉगिन अक्षम करेल. तुमचे कॉन्फिगर केलेले ओळख प्रदाते अयशस्वी झाल्यास डेटाबेसमध्ये ही सेटिंग पूर्ववत केल्याशिवाय लॉग इन करणे शक्य नाही. ओळख प्रदाता काढून टाकताना तुम्हाला अधिक सावधगिरी बाळगावी लागेल",
@@ -410,7 +393,7 @@
       "title": "Webhooks",
       "url": "URL"
     },
-    "workspace-section": {
+    "instance-section": {
       "disallow-change-nickname": "टोपणनाव बदलण्यास मनाई करा",
       "disallow-change-username": "वापरकर्तानाव बदलण्यास मनाई करा",
       "disallow-password-auth": "पासवर्ड प्रमाणीकरणास मनाई करा",

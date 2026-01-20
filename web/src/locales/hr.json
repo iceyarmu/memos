@@ -251,21 +251,6 @@
       "title": "Tokeni pristupa",
       "token": "Token"
     },
-    "user-sessions-section": {
-      "title": "Aktivne sesije",
-      "description": "Popis svih aktivnih sesija za tvoj račun. Sesije automatski istječu 2 tjedna nakon zadnje aktivnosti. Možeš opozvati bilo koju sesiju osim trenutne.",
-      "device": "Uređaj",
-      "location": "Lokacija",
-      "last-active": "Zadnja aktivnost",
-      "expires": "Istječe",
-      "current": "Trenutna",
-      "never": "Nikada",
-      "session-revocation": "Jesi li siguran da želiš opozvati sesiju {{sessionId}}? Morat ćeš se ponovno prijaviti na tom uređaju.",
-      "session-revoked": "Sesija uspješno opozvana",
-      "revoke-session": "Opozovi sesiju",
-      "cannot-revoke-current": "Trenutna sesija se ne može opozvati",
-      "no-sessions": "Nema aktivnih sesija"
-    },
     "account-section": {
       "change-password": "Promijeni lozinku",
       "email-note": "Neobavezno",
@@ -294,7 +279,6 @@
     "memo-related-settings": {
       "content-lenght-limit": "Ograničenje duljine sadržaja (Bajt)",
       "enable-blur-nsfw-content": "Omogući zamućenje osjetljivog sadržaja (NSFW)",
-      "enable-link-preview": "Omogući pregled linka",
       "enable-memo-comments": "Omogući komentare na memoima",
       "enable-memo-location": "Omogući lokaciju memoa",
       "reactions": "Reakcije",
@@ -380,7 +364,6 @@
         "locale": "Lokalizacija servera",
         "title": "Prilagodi server"
       },
-      "disable-markdown-shortcuts-in-editor": "Onemogući Markdown prečace u uređivaču",
       "disable-password-login": "Onemogući prijavu lozinkom",
       "disable-password-login-final-warning": "Upiši \"CONFIRM\" ako znaš što radiš.",
       "disable-password-login-warning": "Ovo će onemogućiti prijavu lozinkom za sve korisnike. Nije moguće prijaviti se bez vraćanja ove postavke u bazi podataka ako vaši pružatelji identiteta zakažu. Budite posebno oprezni pri uklanjanju pružatelja identiteta.",
@@ -410,7 +393,7 @@
       "title": "Webhooks",
       "url": "URL"
     },
-    "workspace-section": {
+    "instance-section": {
       "disallow-change-nickname": "Onemogući promjenu nadimka",
       "disallow-change-username": "Onemogući promjenu korisničkog imena",
       "disallow-password-auth": "Onemogući autentikaciju lozinkom",

@@ -1,15 +1,14 @@
-import { EarthIcon, LibraryIcon, PaperclipIcon, UserCircleIcon } from "lucide-react";
-import { observer } from "mobx-react-lite";
-import { useEffect } from "react";
+import { BellIcon, EarthIcon, LibraryIcon, PaperclipIcon, UserCircleIcon } from "lucide-react";
 import { NavLink } from "react-router-dom";
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from "@/components/ui/tooltip";
 import useCurrentUser from "@/hooks/useCurrentUser";
+import { useNotifications } from "@/hooks/useUserQueries";
 import { cn } from "@/lib/utils";
 import { Routes } from "@/router";
-import { userStore } from "@/store";
+import { UserNotification_Status } from "@/types/proto/api/v1/user_service_pb";
 import { useTranslate } from "@/utils/i18n";
-import BrandBanner from "./BrandBanner";
-import UserBanner from "./UserBanner";
+import MemosLogo from "./MemosLogo";
+import UserMenu from "./UserMenu";
 
 interface NavLinkItem {
   id: string;
@@ -23,18 +22,11 @@ interface Props {
   className?: string;
 }
 
-const Navigation = observer((props: Props) => {
+const Navigation = (props: Props) => {
   const { collapsed, className } = props;
   const t = useTranslate();
   const currentUser = useCurrentUser();
-
-  useEffect(() => {
-    if (!currentUser) {
-      return;
-    }
-
-    userStore.fetchInboxes();
-  }, []);
+  const { data: notifications = [] } = useNotifications();
 
   const homeNavLink: NavLinkItem = {
     id: "header-memos",
@@ -54,6 +46,22 @@ const Navigation = observer((props: Props) => {
     title: t("common.attachments"),
     icon: <PaperclipIcon className="w-6 h-auto shrink-0" />,
   };
+  const unreadCount = notifications.filter((n) => n.status === UserNotification_Status.UNREAD).length;
+  const inboxNavLink: NavLinkItem = {
+    id: "header-inbox",
+    path: Routes.INBOX,
+    title: t("common.inbox"),
+    icon: (
+      <div className="relative">
+        <BellIcon className="w-6 h-auto shrink-0" />
+        {unreadCount > 0 && (
+          <span className="absolute -top-1 -right-1 min-w-[18px] h-[18px] px-1 flex items-center justify-center bg-primary text-primary-foreground text-[10px] font-semibold rounded-full border-2 border-background">
+            {unreadCount > 99 ? "99+" : unreadCount}
+          </span>
+        )}
+      </div>
+    ),
+  };
   const signInNavLink: NavLinkItem = {
     id: "header-auth",
     path: Routes.AUTH,
@@ -61,13 +69,15 @@ const Navigation = observer((props: Props) => {
     icon: <UserCircleIcon className="w-6 h-auto shrink-0" />,
   };
 
-  const navLinks: NavLinkItem[] = currentUser ? [homeNavLink, exploreNavLink, attachmentsNavLink] : [exploreNavLink, signInNavLink];
+  const navLinks: NavLinkItem[] = currentUser
+    ? [homeNavLink, exploreNavLink, attachmentsNavLink, inboxNavLink]
+    : [exploreNavLink, signInNavLink];
 
   return (
     <header className={cn("w-full h-full overflow-auto flex flex-col justify-between items-start gap-4 hide-scrollbar", className)}>
       <div className="w-full px-1 py-1 flex flex-col justify-start items-start space-y-2 overflow-auto overflow-x-hidden hide-scrollbar shrink">
         <NavLink className="mb-3 cursor-default" to={currentUser ? Routes.ROOT : Routes.EXPLORE}>
-          <BrandBanner collapsed={collapsed} />
+          <MemosLogo collapsed={collapsed} />
         </NavLink>
         {navLinks.map((navLink) => (
           <NavLink
@@ -105,11 +115,11 @@ const Navigation = observer((props: Props) => {
       </div>
       {currentUser && (
         <div className={cn("w-full flex flex-col justify-end", props.collapsed ? "items-center" : "items-start pl-3")}>
-          <UserBanner collapsed={collapsed} />
+          <UserMenu collapsed={collapsed} />
         </div>
       )}
     </header>
   );
-});
+};
 
 export default Navigation;

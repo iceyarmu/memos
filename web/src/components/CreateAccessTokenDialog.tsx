@@ -5,15 +5,17 @@ import { Dialog, DialogContent, DialogFooter, DialogHeader, DialogTitle } from "
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { RadioGroup, RadioGroupItem } from "@/components/ui/radio-group";
-import { userServiceClient } from "@/grpcweb";
+import { userServiceClient } from "@/connect";
 import useCurrentUser from "@/hooks/useCurrentUser";
 import useLoading from "@/hooks/useLoading";
+import { handleError } from "@/lib/error";
+import { CreatePersonalAccessTokenResponse } from "@/types/proto/api/v1/user_service_pb";
 import { useTranslate } from "@/utils/i18n";
 
 interface Props {
   open: boolean;
   onOpenChange: (open: boolean) => void;
-  onSuccess: () => void;
+  onSuccess: (response: CreatePersonalAccessTokenResponse) => void;
 }
 
 interface State {
@@ -26,18 +28,19 @@ function CreateAccessTokenDialog({ open, onOpenChange, onSuccess }: Props) {
   const currentUser = useCurrentUser();
   const [state, setState] = useState({
     description: "",
-    expiration: 3600 * 8,
+    expiration: 30, // Default: 30 days
   });
   const requestState = useLoading(false);
 
+  // Expiration options in days (0 = never expires)
   const expirationOptions = [
     {
-      label: t("setting.access-token-section.create-dialog.duration-8h"),
-      value: 3600 * 8,
+      label: t("setting.access-token-section.create-dialog.duration-1m"),
+      value: 30,
     },
     {
-      label: t("setting.access-token-section.create-dialog.duration-1m"),
-      value: 3600 * 24 * 30,
+      label: "90 Days",
+      value: 90,
     },
     {
       label: t("setting.access-token-section.create-dialog.duration-never"),
@@ -72,21 +75,20 @@ function CreateAccessTokenDialog({ open, onOpenChange, onSuccess }: Props) {
 
     try {
       requestState.setLoading();
-      await userServiceClient.createUserAccessToken({
-        parent: currentUser.name,
-        accessToken: {
-          description: state.description,
-          expiresAt: state.expiration ? new Date(Date.now() + state.expiration * 1000) : undefined,
-        },
+      const response = await userServiceClient.createPersonalAccessToken({
+        parent: currentUser?.name,
+        description: state.description,
+        expiresInDays: state.expiration,
       });
 
       requestState.setFinish();
-      onSuccess();
+      onSuccess(response);
       onOpenChange(false);
-    } catch (error: any) {
-      toast.error(error.details);
-      console.error(error);
-      requestState.setError();
+    } catch (error: unknown) {
+      handleError(error, toast.error, {
+        context: "Create access token",
+        onError: () => requestState.setError(),
+      });
     }
   };
 

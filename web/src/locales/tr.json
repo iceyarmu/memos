@@ -251,21 +251,6 @@
       "title": "Erişim Tokenleri",
       "token": "Token"
     },
-    "user-sessions-section": {
-      "title": "Aktif Oturumlar",
-      "description": "Hesabınız için tüm aktif oturumların listesi. Oturumlar, son etkinlikten 2 hafta sonra otomatik olarak sona erer. Mevcut oturum hariç herhangi bir oturumu iptal edebilirsiniz.",
-      "device": "Cihaz",
-      "location": "Konum",
-      "last-active": "Son Etkinlik",
-      "expires": "Sona Erme",
-      "current": "Mevcut",
-      "never": "Asla",
-      "session-revocation": "{{sessionId}} oturumunu iptal etmek istediğinizden emin misiniz? O cihazda tekrar giriş yapmanız gerekecek.",
-      "session-revoked": "Oturum başarıyla iptal edildi",
-      "revoke-session": "Oturumu iptal et",
-      "cannot-revoke-current": "Mevcut oturum iptal edilemez",
-      "no-sessions": "Aktif oturum bulunamadı"
-    },
     "account-section": {
       "change-password": "Şifre değiştir",
       "email-note": "İsteğe bağlı",
@@ -294,7 +279,6 @@
     "memo-related-settings": {
       "content-lenght-limit": "İçerik uzunluğu sınırı (Bayt)",
       "enable-blur-nsfw-content": "NSFW içeriği bulanıklaştırmayı etkinleştir",
-      "enable-link-preview": "Bağlantı önizlemeyi etkinleştir",
       "enable-memo-comments": "Not yorumlarını etkinleştir",
       "enable-memo-location": "Not konumunu etkinleştir",
       "reactions": "Tepkiler",
@@ -380,7 +364,6 @@
         "locale": "Sunucu Yerel Ayarı",
         "title": "Sunucuyu Özelleştir"
       },
-      "disable-markdown-shortcuts-in-editor": "Editörde Markdown kısayollarını devre dışı bırak",
       "disable-password-login": "Şifre ile girişi devre dışı bırak",
       "disable-password-login-final-warning": "Ne yaptığınızı biliyorsanız lütfen \"CONFIRM\" yazın.",
       "disable-password-login-warning": "Bu, tüm kullanıcılar için şifre ile girişi devre dışı bırakacaktır. Yapılandırılmış kimlik sağlayıcılarınız başarısız olursa, veritabanında bu ayarı geri almadan giriş yapmak mümkün olmayacaktır. Ayrıca bir kimlik sağlayıcıyı kaldırırken çok dikkatli olmanız gerekecektir",
@@ -410,7 +393,7 @@
       "title": "Webhook'lar",
       "url": "URL"
     },
-    "workspace-section": {
+    "instance-section": {
       "disallow-change-nickname": "Takma ad değiştirmeyi yasakla",
       "disallow-change-username": "Kullanıcı adı değiştirmeyi yasakla",
       "disallow-password-auth": "Şifre ile kimlik doğrulamayı yasakla",

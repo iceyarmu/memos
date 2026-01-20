@@ -251,21 +251,6 @@
       "title": "Access tokens",
       "token": "Token"
     },
-    "user-sessions-section": {
-      "title": "Aktive økter",
-      "description": "En liste over alle aktive økter for din konto. Økter utløper automatisk 2 uker etter siste aktivitet. Du kan tilbakekalle enhver økt bortsett fra den nåværende.",
-      "device": "Enhet",
-      "location": "Plassering",
-      "last-active": "Sist aktiv",
-      "expires": "Utløper",
-      "current": "Nåværende",
-      "never": "Aldri",
-      "session-revocation": "Er du sikker på at du vil tilbakekalle økt {{sessionId}}? Du må logge inn på nytt på den enheten.",
-      "session-revoked": "Økt tilbakekalt",
-      "revoke-session": "Tilbakekall økt",
-      "cannot-revoke-current": "Kan ikke tilbakekalle nåværende økt",
-      "no-sessions": "Ingen aktive økter funnet"
-    },
     "account-section": {
       "change-password": "Endre passord",
       "email-note": "Valgfritt",
@@ -294,7 +279,6 @@
     "memo-related-settings": {
       "content-lenght-limit": "Maksimal innholdslengde (Byte)",
       "enable-blur-nsfw-content": "Slå på sløring av NSFW-innhold (legg til NSFW-tagger nedenfor)",
-      "enable-link-preview": "Slå på forhåndsvisning av linker",
       "enable-memo-comments": "Slå på kommentarer for memoer",
       "enable-memo-location": "Slå på lokasjon for memoer",
       "reactions": "Reaksjoner",
@@ -380,7 +364,6 @@
         "locale": "Serverlokalisering",
         "title": "Tilpass server"
       },
-      "disable-markdown-shortcuts-in-editor": "Slå av Markdown-snarveier ved redigering",
       "disable-password-login": "Slå av passordinnlogging",
       "disable-password-login-final-warning": "Skriv \"CONFIRM\" hvis du vet hva du gjør.",
       "disable-password-login-warning": "Dette slår av passordinnlogging for alle brukere. Dersom de konfigurerte identitetsleverandørene mislykkes er det ikke mulig å logge inn uten å tilbakestille denne innstillingen i databasen. Du må også være ekstra forsiktig når du fjerner en identitetsleverandør.",
@@ -410,7 +393,7 @@
       "title": "Webhooks",
       "url": "URL"
     },
-    "workspace-section": {
+    "instance-section": {
       "disallow-change-nickname": "Ikke tillat endring av kallenavn",
       "disallow-change-username": "Ikke tillat endring av brukernavn",
       "disallow-password-auth": "Ikke tillat autentisering med passord",

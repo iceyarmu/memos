@@ -1,116 +1,157 @@
 import copy from "copy-to-clipboard";
-import dayjs from "dayjs";
-import { ExternalLinkIcon } from "lucide-react";
-import { observer } from "mobx-react-lite";
-import { useEffect, useMemo, useState } from "react";
+import { ExternalLinkIcon, LayoutListIcon, type LucideIcon, MapIcon } from "lucide-react";
 import { toast } from "react-hot-toast";
-import { useParams } from "react-router-dom";
+import { useParams, useSearchParams } from "react-router-dom";
+import { MemoRenderContext } from "@/components/MasonryView";
 import MemoView from "@/components/MemoView";
 import PagedMemoList from "@/components/PagedMemoList";
 import UserAvatar from "@/components/UserAvatar";
+import UserMemoMap from "@/components/UserMemoMap";
 import { Button } from "@/components/ui/button";
-import useLoading from "@/hooks/useLoading";
-import { viewStore, userStore } from "@/store";
-import { extractUserIdFromName } from "@/store/common";
-import memoFilterStore from "@/store/memoFilter";
-import { State } from "@/types/proto/api/v1/common";
-import { Memo } from "@/types/proto/api/v1/memo_service";
-import { User } from "@/types/proto/api/v1/user_service";
+import { useMemoFilters, useMemoSorting } from "@/hooks";
+import { useUser } from "@/hooks/useUserQueries";
+import { cn } from "@/lib/utils";
+import { State } from "@/types/proto/api/v1/common_pb";
+import { Memo } from "@/types/proto/api/v1/memo_service_pb";
 import { useTranslate } from "@/utils/i18n";
 
-const UserProfile = observer(() => {
+type TabView = "memos" | "map";
+
+const TabButton = ({
+  icon: Icon,
+  label,
+  isActive,
+  onClick,
+}: {
+  icon: LucideIcon;
+  label: string;
+  isActive: boolean;
+  onClick: () => void;
+}) => (
+  <button
+    type="button"
+    onClick={onClick}
+    className={cn(
+      "flex items-center gap-2 px-3 py-2 text-sm font-medium transition-all duration-200 border-b-2 rounded-t-lg",
+      isActive
+        ? "border-primary text-primary bg-primary/5"
+        : "border-transparent text-muted-foreground hover:text-foreground hover:bg-muted/50",
+    )}
+  >
+    <Icon className="h-4 w-4" />
+    {label}
+  </button>
+);
+
+interface User {
+  name: string;
+  username: string;
+  displayName: string;
+  avatarUrl?: string;
+  description?: string;
+}
+
+const ProfileHeader = ({ user, onCopyProfileLink, shareLabel }: { user: User; onCopyProfileLink: () => void; shareLabel: string }) => (
+  <div className="border-b border-border/10 px-4 py-8 sm:px-6">
+    <div className="mx-auto flex max-w-2xl gap-4 sm:gap-6">
+      <UserAvatar className="h-20 w-20 shrink-0 rounded-2xl shadow-sm sm:h-24 sm:w-24" avatarUrl={user.avatarUrl} />
+      <div className="flex flex-1 flex-col gap-3">
+        <div>
+          <h1 className="text-2xl font-bold text-foreground sm:text-3xl">{user.displayName || user.username}</h1>
+          {user.displayName && <p className="text-sm text-muted-foreground">@{user.username}</p>}
+        </div>
+        {user.description && <p className="text-sm text-foreground/70">{user.description}</p>}
+        <Button variant="outline" size="sm" onClick={onCopyProfileLink} className="w-fit gap-2">
+          <ExternalLinkIcon className="h-4 w-4" />
+          {shareLabel}
+        </Button>
+      </div>
+    </div>
+  </div>
+);
+
+const UserProfile = () => {
   const t = useTranslate();
-  const params = useParams();
-  const loadingState = useLoading();
-  const [user, setUser] = useState<User>();
+  const username = useParams().username;
+  const [searchParams, setSearchParams] = useSearchParams();
+  const activeTab = (searchParams.get("view") === "map" ? "map" : "memos") as TabView;
 
-  useEffect(() => {
-    const username = params.username;
-    if (!username) {
-      throw new Error("username is required");
-    }
+  const { data: user, isLoading, error } = useUser(`users/${username}`, { enabled: !!username });
 
-    userStore
-      .getOrFetchUserByUsername(username)
-      .then((user) => {
-        setUser(user);
-        loadingState.setFinish();
-      })
-      .catch((error) => {
-        console.error(error);
-        toast.error(t("message.user-not-found"));
-      });
-  }, [params.username]);
+  if (error && !isLoading) {
+    toast.error(t("message.user-not-found"));
+  }
 
-  const memoFilter = useMemo(() => {
-    if (!user) {
-      return undefined;
-    }
+  const memoFilter = useMemoFilters({
+    creatorName: user?.name,
+    includeShortcuts: false,
+    includePinned: true,
+  });
 
-    const conditions = [`creator_id == ${extractUserIdFromName(user.name)}`];
-    for (const filter of memoFilterStore.filters) {
-      if (filter.factor === "contentSearch") {
-        conditions.push(`content.contains("${filter.value}")`);
-      } else if (filter.factor === "tagSearch") {
-        conditions.push(`tag in ["${filter.value}"]`);
-      }
-    }
-    return conditions.length > 0 ? conditions.join(" && ") : undefined;
-  }, [user, memoFilterStore.filters]);
+  const { listSort, orderBy } = useMemoSorting({
+    pinnedFirst: true,
+    state: State.NORMAL,
+  });
 
   const handleCopyProfileLink = () => {
-    if (!user) {
-      return;
-    }
-
+    if (!user) return;
     copy(`${window.location.origin}/u/${encodeURIComponent(user.username)}`);
     toast.success(t("message.copied"));
   };
 
+  const toggleTab = (view: TabView) => {
+    setSearchParams((prev) => {
+      view === "map" ? prev.set("view", "map") : prev.delete("view");
+      return prev;
+    });
+  };
+
+  if (isLoading) return null;
+
   return (
-    <section className="w-full max-w-3xl mx-auto min-h-full flex flex-col justify-start items-center pb-8">
-      <div className="w-full flex flex-col justify-start items-center max-w-2xl">
-        {!loadingState.isLoading &&
-          (user ? (
-            <>
-              <div className="my-4 w-full flex justify-end items-center gap-2">
-                <Button variant="outline" onClick={handleCopyProfileLink}>
-                  {t("common.share")}
-                  <ExternalLinkIcon className="ml-1 w-4 h-auto opacity-60" />
-                </Button>
-              </div>
-              <div className="w-full flex flex-col justify-start items-start pt-4 pb-8 px-3">
-                <UserAvatar className="w-16! h-16! drop-shadow rounded-3xl" avatarUrl={user?.avatarUrl} />
-                <div className="mt-2 w-auto max-w-[calc(100%-6rem)] flex flex-col justify-center items-start">
-                  <p className="w-full text-3xl text-foreground leading-tight font-medium opacity-80 truncate">
-                    {user.displayName || user.username}
-                  </p>
-                  <p className="w-full text-muted-foreground leading-snug whitespace-pre-wrap truncate line-clamp-6">{user.description}</p>
-                </div>
-              </div>
-              <PagedMemoList
-                renderer={(memo: Memo) => (
-                  <MemoView key={`${memo.name}-${memo.displayTime}`} memo={memo} showVisibility showPinned compact />
-                )}
-                listSort={(memos: Memo[]) =>
-                  memos
-                    .filter((memo) => memo.state === State.NORMAL)
-                    .sort((a, b) =>
-                      viewStore.state.orderByTimeAsc
-                        ? dayjs(a.displayTime).unix() - dayjs(b.displayTime).unix()
-                        : dayjs(b.displayTime).unix() - dayjs(a.displayTime).unix(),
-                    )
-                }
-                orderBy={viewStore.state.orderByTimeAsc ? "display_time asc" : "display_time desc"}
-                filter={memoFilter}
+    <section className="flex min-h-screen w-full flex-col bg-background">
+      {user ? (
+        <>
+          <ProfileHeader user={user} onCopyProfileLink={handleCopyProfileLink} shareLabel={t("common.share")} />
+
+          <div className="border-b border-border/10 mb-4">
+            <div className="mx-auto flex max-w-2xl">
+              <TabButton
+                icon={LayoutListIcon}
+                label={t("common.memos")}
+                isActive={activeTab === "memos"}
+                onClick={() => toggleTab("memos")}
               />
-            </>
-          ) : (
-            <p>Not found</p>
-          ))}
-      </div>
+              <TabButton icon={MapIcon} label={t("common.map")} isActive={activeTab === "map"} onClick={() => toggleTab("map")} />
+            </div>
+          </div>
+
+          <div className="flex-1">
+            <div className="mx-auto w-full max-w-2xl">
+              {activeTab === "memos" ? (
+                <PagedMemoList
+                  renderer={(memo: Memo, context?: MemoRenderContext) => (
+                    <MemoView key={`${memo.name}-${memo.displayTime}`} memo={memo} showVisibility showPinned compact={context?.compact} />
+                  )}
+                  listSort={listSort}
+                  orderBy={orderBy}
+                  filter={memoFilter}
+                />
+              ) : (
+                <div className="">
+                  <UserMemoMap creator={user.name} className="h-[60dvh] sm:h-[500px] rounded-xl" />
+                </div>
+              )}
+            </div>
+          </div>
+        </>
+      ) : (
+        <div className="flex flex-1 items-center justify-center">
+          <p className="text-muted-foreground">{t("message.user-not-found")}</p>
+        </div>
+      )}
     </section>
   );
-});
+};
 
 export default UserProfile;

@@ -1,23 +1,26 @@
+import { timestampDate } from "@bufbuild/protobuf/wkt";
 import { LoaderIcon } from "lucide-react";
-import { observer } from "mobx-react-lite";
-import { ClientError } from "nice-grpc-web";
 import { useState } from "react";
 import { toast } from "react-hot-toast";
+import { setAccessToken } from "@/auth-state";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
-import { authServiceClient } from "@/grpcweb";
+import { authServiceClient } from "@/connect";
+import { useAuth } from "@/contexts/AuthContext";
+import { useInstance } from "@/contexts/InstanceContext";
 import useLoading from "@/hooks/useLoading";
 import useNavigateTo from "@/hooks/useNavigateTo";
-import { workspaceStore } from "@/store";
-import { initialUserStore } from "@/store/user";
+import { handleError } from "@/lib/error";
 import { useTranslate } from "@/utils/i18n";
 
-const PasswordSignInForm = observer(() => {
+function PasswordSignInForm() {
   const t = useTranslate();
   const navigateTo = useNavigateTo();
+  const { profile } = useInstance();
+  const { initialize } = useAuth();
   const actionBtnLoadingState = useLoading(false);
-  const [username, setUsername] = useState(workspaceStore.state.profile.mode === "demo" ? "yourselfhosted" : "");
-  const [password, setPassword] = useState(workspaceStore.state.profile.mode === "demo" ? "yourselfhosted" : "");
+  const [username, setUsername] = useState(profile.mode === "demo" ? "demo" : "");
+  const [password, setPassword] = useState(profile.mode === "demo" ? "secret" : "");
 
   const handleUsernameInputChanged = (e: React.ChangeEvent<HTMLInputElement>) => {
     const text = e.target.value as string;
@@ -45,14 +48,22 @@ const PasswordSignInForm = observer(() => {
 
     try {
       actionBtnLoadingState.setLoading();
-      await authServiceClient.createSession({
-        passwordCredentials: { username, password },
+      const response = await authServiceClient.signIn({
+        credentials: {
+          case: "passwordCredentials",
+          value: { username, password },
+        },
       });
-      await initialUserStore();
+      // Store access token from login response
+      if (response.accessToken) {
+        setAccessToken(response.accessToken, response.accessTokenExpiresAt ? timestampDate(response.accessTokenExpiresAt) : undefined);
+      }
+      await initialize();
       navigateTo("/");
-    } catch (error: any) {
-      console.error(error);
-      toast.error((error as ClientError).details || "Failed to sign in.");
+    } catch (error: unknown) {
+      handleError(error, toast.error, {
+        fallbackMessage: "Failed to sign in.",
+      });
     }
     actionBtnLoadingState.setFinish();
   };
@@ -83,7 +94,7 @@ const PasswordSignInForm = observer(() => {
             readOnly={actionBtnLoadingState.isLoading}
             placeholder={t("common.password")}
             value={password}
-            autoComplete="password"
+            autoComplete="current-password"
             autoCapitalize="off"
             spellCheck={false}
             onChange={handlePasswordInputChanged}
@@ -99,6 +110,6 @@ const PasswordSignInForm = observer(() => {
       </div>
     </form>
   );
-});
+}
 
 export default PasswordSignInForm;

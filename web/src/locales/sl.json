@@ -251,21 +251,6 @@
       "title": "Dostopni žetoni",
       "token": "Žeton"
     },
-    "user-sessions-section": {
-      "title": "Aktivne seje",
-      "description": "Seznam vseh aktivnih sej vašega računa. Seje samodejno potečejo 2 tedna po zadnji aktivnosti. Lahko prekličete katerokoli sejo razen trenutne.",
-      "device": "Naprava",
-      "location": "Lokacija",
-      "last-active": "Zadnja aktivnost",
-      "expires": "Poteče",
-      "current": "Trenutna",
-      "never": "Nikoli",
-      "session-revocation": "Ali ste prepričani, da želite preklicati sejo {{sessionId}}? Ponovno se boste morali prijaviti na tej napravi.",
-      "session-revoked": "Seja uspešno preklicana",
-      "revoke-session": "Prekliči sejo",
-      "cannot-revoke-current": "Trenutne seje ni mogoče preklicati",
-      "no-sessions": "Ni aktivnih sej"
-    },
     "account-section": {
       "change-password": "Zamenjaj geslo",
       "email-note": "Opcijsko",
@@ -294,7 +279,6 @@
     "memo-related-settings": {
       "content-lenght-limit": "Omejitev dolžine vsebine (bajt)",
       "enable-blur-nsfw-content": "Omogoči zameglitev občutljive vsebine (NSFW)",
-      "enable-link-preview": "Omogoči predogled povezave",
       "enable-memo-comments": "Omogoči komentarje na beležkah",
       "enable-memo-location": "Omogoči lokacijo beležk",
       "reactions": "Odzivi",
@@ -380,7 +364,6 @@
         "locale": "Jezik strežnika",
         "title": "Prilagodi strežnik"
       },
-      "disable-markdown-shortcuts-in-editor": "Onemogoči bližnjice Markdown v urejevalniku",
       "disable-password-login": "Onemogoči prijavo z geslom",
       "disable-password-login-final-warning": "Prosim vnesite \"POTRDI\", če veste kaj počnete.",
       "disable-password-login-warning": "To bo onemogočilo prijavo z geslom za vse uporabnike. Brez ponovnega vklopa te nastavitve v bazi, prijava ne bo več možna. Enako tudi če identiteta enotne prijave zataji. Bodite tudi zelo previdni pri odstranjevalju identitete enotne prijave",
@@ -410,7 +393,7 @@
       "title": "Webhooks",
       "url": "URL"
     },
-    "workspace-section": {
+    "instance-section": {
       "disallow-change-nickname": "Onemogoči spremembo vzdevka",
       "disallow-change-username": "Onemogoči spremembo uporabniškega imena",
       "disallow-password-auth": "Onemogoči preverjanje gesla",

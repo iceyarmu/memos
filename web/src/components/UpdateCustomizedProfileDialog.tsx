@@ -1,3 +1,4 @@
+import { create } from "@bufbuild/protobuf";
 import { useState } from "react";
 import { toast } from "react-hot-toast";
 import { Button } from "@/components/ui/button";
@@ -5,12 +6,16 @@ import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, D
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
-import { workspaceStore } from "@/store";
-import { workspaceSettingNamePrefix } from "@/store/common";
-import { WorkspaceSetting_GeneralSetting_CustomProfile, WorkspaceSetting_Key } from "@/types/proto/api/v1/workspace_service";
+import { useInstance } from "@/contexts/InstanceContext";
+import { buildInstanceSettingName } from "@/helpers/resource-names";
+import { handleError } from "@/lib/error";
+import {
+  InstanceSetting_GeneralSetting_CustomProfile,
+  InstanceSetting_GeneralSetting_CustomProfileSchema,
+  InstanceSetting_Key,
+  InstanceSettingSchema,
+} from "@/types/proto/api/v1/instance_service_pb";
 import { useTranslate } from "@/utils/i18n";
-import LocaleSelect from "./LocaleSelect";
-import ThemeSelect from "./ThemeSelect";
 
 interface Props {
   open: boolean;
@@ -20,14 +25,14 @@ interface Props {
 
 function UpdateCustomizedProfileDialog({ open, onOpenChange, onSuccess }: Props) {
   const t = useTranslate();
-  const workspaceGeneralSetting = workspaceStore.state.generalSetting;
-  const [customProfile, setCustomProfile] = useState<WorkspaceSetting_GeneralSetting_CustomProfile>(
-    WorkspaceSetting_GeneralSetting_CustomProfile.fromPartial(workspaceGeneralSetting.customProfile || {}),
+  const { generalSetting: instanceGeneralSetting, updateSetting } = useInstance();
+  const [customProfile, setCustomProfile] = useState<InstanceSetting_GeneralSetting_CustomProfile>(
+    create(InstanceSetting_GeneralSetting_CustomProfileSchema, instanceGeneralSetting.customProfile || {}),
   );
 
   const [isLoading, setIsLoading] = useState(false);
 
-  const setPartialState = (partialState: Partial<WorkspaceSetting_GeneralSetting_CustomProfile>) => {
+  const setPartialState = (partialState: Partial<InstanceSetting_GeneralSetting_CustomProfile>) => {
     setCustomProfile((state) => ({
       ...state,
       ...partialState,
@@ -52,18 +57,11 @@ function UpdateCustomizedProfileDialog({ open, onOpenChange, onSuccess }: Props)
     });
   };
 
-  const handleLocaleSelectChange = (locale: Locale) => {
-    setPartialState({
-      locale: locale,
-    });
-  };
-
   const handleRestoreButtonClick = () => {
     setPartialState({
       title: "Memos",
       logoUrl: "/logo.webp",
       description: "",
-      locale: "en",
     });
   };
 
@@ -79,19 +77,26 @@ function UpdateCustomizedProfileDialog({ open, onOpenChange, onSuccess }: Props)
 
     setIsLoading(true);
     try {
-      await workspaceStore.upsertWorkspaceSetting({
-        name: `${workspaceSettingNamePrefix}${WorkspaceSetting_Key.GENERAL}`,
-        generalSetting: {
-          ...workspaceGeneralSetting,
-          customProfile: customProfile,
-        },
-      });
+      await updateSetting(
+        create(InstanceSettingSchema, {
+          name: buildInstanceSettingName(InstanceSetting_Key.GENERAL),
+          value: {
+            case: "generalSetting",
+            value: {
+              ...instanceGeneralSetting,
+              customProfile: customProfile,
+            },
+          },
+        }),
+      );
       toast.success(t("message.update-succeed"));
       onSuccess?.();
       onOpenChange(false);
     } catch (error) {
-      console.error(error);
-      toast.error("Failed to update profile");
+      handleError(error, toast.error, {
+        context: "Update customized profile",
+        fallbackMessage: "Failed to update profile",
+      });
     } finally {
       setIsLoading(false);
     }
@@ -102,7 +107,7 @@ function UpdateCustomizedProfileDialog({ open, onOpenChange, onSuccess }: Props)
       <DialogContent className="max-w-2xl">
         <DialogHeader>
           <DialogTitle>{t("setting.system-section.customize-server.title")}</DialogTitle>
-          <DialogDescription>Customize your workspace appearance and settings.</DialogDescription>
+          <DialogDescription>Customize your instance appearance and settings.</DialogDescription>
         </DialogHeader>
 
         <div className="grid gap-4">
@@ -125,16 +130,6 @@ function UpdateCustomizedProfileDialog({ open, onOpenChange, onSuccess }: Props)
               onChange={handleDescriptionChanged}
               placeholder="Enter description"
             />
-          </div>
-
-          <div className="grid gap-2">
-            <Label>{t("setting.system-section.customize-server.locale")}</Label>
-            <LocaleSelect value={customProfile.locale} onChange={handleLocaleSelectChange} />
-          </div>
-
-          <div className="grid gap-2">
-            <Label>Theme</Label>
-            <ThemeSelect />
           </div>
         </div>
 

@@ -1,12 +1,15 @@
+import { create } from "@bufbuild/protobuf";
+import { FieldMaskSchema } from "@bufbuild/protobuf/wkt";
 import React, { useEffect, useState } from "react";
 import { toast } from "react-hot-toast";
 import { Button } from "@/components/ui/button";
 import { Dialog, DialogContent, DialogFooter, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
-import { userServiceClient } from "@/grpcweb";
+import { userServiceClient } from "@/connect";
 import useCurrentUser from "@/hooks/useCurrentUser";
 import useLoading from "@/hooks/useLoading";
+import { handleError } from "@/lib/error";
 import { useTranslate } from "@/utils/i18n";
 
 interface Props {
@@ -98,17 +101,18 @@ function CreateWebhookDialog({ open, onOpenChange, webhookName, onSuccess }: Pro
             displayName: state.displayName,
             url: state.url,
           },
-          updateMask: ["display_name", "url"],
+          updateMask: create(FieldMaskSchema, { paths: ["display_name", "url"] }),
         });
       }
 
       onSuccess?.();
       onOpenChange(false);
       requestState.setFinish();
-    } catch (error: any) {
-      console.error(error);
-      toast.error(error.details);
-      requestState.setError();
+    } catch (error: unknown) {
+      handleError(error, toast.error, {
+        context: webhookName ? "Update webhook" : "Create webhook",
+        onError: () => requestState.setError(),
+      });
     }
   };
 

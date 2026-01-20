@@ -1,9 +1,3 @@
--- migration_history
-CREATE TABLE migration_history (
-  version TEXT NOT NULL PRIMARY KEY,
-  created_ts BIGINT NOT NULL DEFAULT EXTRACT(EPOCH FROM NOW())
-);
-
 -- system_setting
 CREATE TABLE system_setting (
   name TEXT NOT NULL PRIMARY KEY,
@@ -48,14 +42,6 @@ CREATE TABLE memo (
   payload JSONB NOT NULL DEFAULT '{}'
 );
 
--- memo_organizer
-CREATE TABLE memo_organizer (
-  memo_id INTEGER NOT NULL,
-  user_id INTEGER NOT NULL,
-  pinned INTEGER NOT NULL DEFAULT 0,
-  UNIQUE(memo_id, user_id)
-);
-
 -- memo_relation
 CREATE TABLE memo_relation (
   memo_id INTEGER NOT NULL,
@@ -64,8 +50,8 @@ CREATE TABLE memo_relation (
   UNIQUE(memo_id, related_memo_id, type)
 );
 
--- resource
-CREATE TABLE resource (
+-- attachment
+CREATE TABLE attachment (
   id SERIAL PRIMARY KEY,
   uid TEXT NOT NULL UNIQUE,
   creator_id INTEGER NOT NULL,

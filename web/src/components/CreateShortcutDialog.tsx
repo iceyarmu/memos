@@ -1,15 +1,18 @@
-import React, { useEffect, useState } from "react";
+import { create } from "@bufbuild/protobuf";
+import { FieldMaskSchema } from "@bufbuild/protobuf/wkt";
+import { useEffect, useState } from "react";
 import { toast } from "react-hot-toast";
 import { Button } from "@/components/ui/button";
 import { Dialog, DialogContent, DialogFooter, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
-import { shortcutServiceClient } from "@/grpcweb";
+import { shortcutServiceClient } from "@/connect";
+import { useAuth } from "@/contexts/AuthContext";
 import useCurrentUser from "@/hooks/useCurrentUser";
 import useLoading from "@/hooks/useLoading";
-import { userStore } from "@/store";
-import { Shortcut } from "@/types/proto/api/v1/shortcut_service";
+import { handleError } from "@/lib/error";
+import { Shortcut, ShortcutSchema } from "@/types/proto/api/v1/shortcut_service_pb";
 import { useTranslate } from "@/utils/i18n";
 
 interface Props {
@@ -22,35 +25,43 @@ interface Props {
 function CreateShortcutDialog({ open, onOpenChange, shortcut: initialShortcut, onSuccess }: Props) {
   const t = useTranslate();
   const user = useCurrentUser();
-  const [shortcut, setShortcut] = useState<Shortcut>({
-    name: initialShortcut?.name || "",
-    title: initialShortcut?.title || "",
-    filter: initialShortcut?.filter || "",
-  });
+  const { refetchSettings } = useAuth();
+  const [shortcut, setShortcut] = useState<Shortcut>(
+    create(ShortcutSchema, {
+      name: initialShortcut?.name || "",
+      title: initialShortcut?.title || "",
+      filter: initialShortcut?.filter || "",
+    }),
+  );
   const requestState = useLoading(false);
-  const isCreating = !initialShortcut;
+  const isCreating = shortcut.name === "";
 
   useEffect(() => {
-    if (initialShortcut) {
-      setShortcut({
-        name: initialShortcut.name,
-        title: initialShortcut.title,
-        filter: initialShortcut.filter,
-      });
-    } else {
-      setShortcut({ name: "", title: "", filter: "" });
+    if (shortcut.name) {
+      setShortcut(shortcut);
     }
-  }, [initialShortcut]);
+  }, [shortcut.name, shortcut.title, shortcut.filter]);
 
   const onShortcutTitleChange = (e: React.ChangeEvent<HTMLInputElement>) => {
-    setShortcut({ ...shortcut, title: e.target.value });
+    setPartialState({
+      title: e.target.value,
+    });
   };
 
   const onShortcutFilterChange = (e: React.ChangeEvent<HTMLTextAreaElement>) => {
-    setShortcut({ ...shortcut, filter: e.target.value });
+    setPartialState({
+      filter: e.target.value,
+    });
   };
 
-  const handleConfirm = async () => {
+  const setPartialState = (partialState: Partial<Shortcut>) => {
+    setShortcut({
+      ...shortcut,
+      ...partialState,
+    });
+  };
+
+  const handleSaveBtnClick = async () => {
     if (!shortcut.title || !shortcut.filter) {
       toast.error("Title and filter cannot be empty");
       return;
@@ -60,9 +71,9 @@ function CreateShortcutDialog({ open, onOpenChange, shortcut: initialShortcut, o
       requestState.setLoading();
       if (isCreating) {
         await shortcutServiceClient.createShortcut({
-          parent: user.name,
+          parent: user?.name,
           shortcut: {
-            name: "", // Will be set by server
+            name: "",
             title: shortcut.title,
             filter: shortcut.filter,
           },
@@ -72,21 +83,21 @@ function CreateShortcutDialog({ open, onOpenChange, shortcut: initialShortcut, o
         await shortcutServiceClient.updateShortcut({
           shortcut: {
             ...shortcut,
-            name: initialShortcut!.name, // Keep the original resource name
+            name: initialShortcut!.name,
           },
-          updateMask: ["title", "filter"],
+          updateMask: create(FieldMaskSchema, { paths: ["title", "filter"] }),
         });
         toast.success("Update shortcut successfully");
       }
-      // Refresh shortcuts.
-      await userStore.fetchUserSettings();
+      await refetchSettings();
       requestState.setFinish();
       onSuccess?.();
       onOpenChange(false);
-    } catch (error: any) {
-      console.error(error);
-      toast.error(error.details);
-      requestState.setError();
+    } catch (error: unknown) {
+      await handleError(error, toast.error, {
+        context: isCreating ? "Create shortcut" : "Update shortcut",
+        onError: () => requestState.setError(),
+      });
     }
   };
 
@@ -111,28 +122,13 @@ function CreateShortcutDialog({ open, onOpenChange, shortcut: initialShortcut, o
               onChange={onShortcutFilterChange}
             />
           </div>
-          <div className="text-sm text-muted-foreground">
-            <p className="mb-2">{t("common.learn-more")}:</p>
-            <ul className="list-disc list-inside space-y-1">
-              <li>
-                <a
-                  className="text-primary hover:underline"
-                  href="https://www.usememos.com/docs/guides/shortcuts"
-                  target="_blank"
-                  rel="noopener noreferrer"
-                >
-                  Docs - Shortcuts
-                </a>
-              </li>
-            </ul>
-          </div>
         </div>
         <DialogFooter>
           <Button variant="ghost" disabled={requestState.isLoading} onClick={() => onOpenChange(false)}>
             {t("common.cancel")}
           </Button>
-          <Button disabled={requestState.isLoading} onClick={handleConfirm}>
-            {t("common.confirm")}
+          <Button disabled={requestState.isLoading} onClick={handleSaveBtnClick}>
+            {t("common.save")}
           </Button>
         </DialogFooter>
       </DialogContent>

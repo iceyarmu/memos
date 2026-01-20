@@ -1,4 +1,4 @@
-import { Attachment } from "@/types/proto/api/v1/attachment_service";
+import { Attachment } from "@/types/proto/api/v1/attachment_service_pb";
 
 const isIPAddress = (hostname: string): boolean => {
   const ipv4Regex = /^(\d{1,3}\.){3}\d{1,3}$/;
@@ -20,6 +20,10 @@ export const getAttachmentUrl = (attachment: Attachment) => {
   } else {
     return `${window.location.origin}/files/${attachment.reference}`;
   }
+};
+
+export const getAttachmentThumbnailUrl = (attachment: Attachment) => {
+  return `${window.location.origin}/file/${attachment.name}/${attachment.filename}?thumbnail=true`;
 };
 
 export const getAttachmentType = (attachment: Attachment) => {

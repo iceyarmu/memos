@@ -1,127 +1,93 @@
-import { observer } from "mobx-react-lite";
-import { memo, useEffect, useRef, useState } from "react";
-import useCurrentUser from "@/hooks/useCurrentUser";
+import type { Element } from "hast";
+import { memo } from "react";
+import ReactMarkdown from "react-markdown";
+import rehypeKatex from "rehype-katex";
+import rehypeRaw from "rehype-raw";
+import rehypeSanitize from "rehype-sanitize";
+import remarkBreaks from "remark-breaks";
+import remarkGfm from "remark-gfm";
+import remarkMath from "remark-math";
 import { cn } from "@/lib/utils";
-import { memoStore } from "@/store";
-import { Node, NodeType } from "@/types/proto/api/v1/markdown_service";
 import { useTranslate } from "@/utils/i18n";
-import { isSuperUser } from "@/utils/user";
-import Renderer from "./Renderer";
-import { RendererContext } from "./types";
+import { remarkDisableSetext } from "@/utils/remark-plugins/remark-disable-setext";
+import { remarkPreserveType } from "@/utils/remark-plugins/remark-preserve-type";
+import { remarkTag } from "@/utils/remark-plugins/remark-tag";
+import { CodeBlock } from "./CodeBlock";
+import { isTagNode, isTaskListItemNode } from "./ConditionalComponent";
+import { SANITIZE_SCHEMA } from "./constants";
+import { useCompactLabel, useCompactMode } from "./hooks";
+import { Tag } from "./Tag";
+import { TaskListItem } from "./TaskListItem";
+import type { MemoContentProps } from "./types";
 
-// MAX_DISPLAY_HEIGHT is the maximum height of the memo content to display in compact mode.
-const MAX_DISPLAY_HEIGHT = 256;
-
-interface Props {
-  nodes: Node[];
-  memoName?: string;
-  compact?: boolean;
-  readonly?: boolean;
-  disableFilter?: boolean;
-  // embeddedMemos is a set of memo resource names that are embedded in the current memo.
-  // This is used to prevent infinite loops when a memo embeds itself.
-  embeddedMemos?: Set<string>;
-  className?: string;
-  contentClassName?: string;
-  onClick?: (e: React.MouseEvent) => void;
-  onDoubleClick?: (e: React.MouseEvent) => void;
-  parentPage?: string;
-}
-
-type ContentCompactView = "ALL" | "SNIPPET";
-
-const MemoContent = observer((props: Props) => {
-  const { className, contentClassName, nodes, memoName, embeddedMemos, onClick, onDoubleClick } = props;
+const MemoContent = (props: MemoContentProps) => {
+  const { className, contentClassName, content, onClick, onDoubleClick } = props;
   const t = useTranslate();
-  const currentUser = useCurrentUser();
-  const memoContentContainerRef = useRef<HTMLDivElement>(null);
-  const [showCompactMode, setShowCompactMode] = useState<ContentCompactView | undefined>(undefined);
-  const memo = memoName ? memoStore.getMemoByName(memoName) : null;
-  const allowEdit = !props.readonly && memo && (currentUser?.name === memo.creator || isSuperUser(currentUser));
+  const {
+    containerRef: memoContentContainerRef,
+    mode: showCompactMode,
+    toggle: toggleCompactMode,
+  } = useCompactMode(Boolean(props.compact));
 
-  // Initial compact mode.
-  useEffect(() => {
-    if (!props.compact) {
-      return;
-    }
-    if (!memoContentContainerRef.current) {
-      return;
-    }
-
-    if ((memoContentContainerRef.current as HTMLDivElement).getBoundingClientRect().height > MAX_DISPLAY_HEIGHT) {
-      setShowCompactMode("ALL");
-    }
-  }, []);
-
-  const onMemoContentClick = async (e: React.MouseEvent) => {
-    if (onClick) {
-      onClick(e);
-    }
-  };
-
-  const onMemoContentDoubleClick = async (e: React.MouseEvent) => {
-    if (onDoubleClick) {
-      onDoubleClick(e);
-    }
-  };
-
-  let prevNode: Node | null = null;
-  let skipNextLineBreakFlag = false;
-  const compactStates = {
-    ALL: { text: t("memo.show-more"), nextState: "SNIPPET" },
-    SNIPPET: { text: t("memo.show-less"), nextState: "ALL" },
-  };
+  const compactLabel = useCompactLabel(showCompactMode, t as (key: string) => string);
 
   return (
-    <RendererContext.Provider
-      value={{
-        nodes,
-        memoName: memoName,
-        readonly: !allowEdit,
-        disableFilter: props.disableFilter,
-        embeddedMemos: embeddedMemos || new Set(),
-        parentPage: props.parentPage,
-      }}
-    >
-      <div className={`w-full flex flex-col justify-start items-start text-foreground ${className || ""}`}>
-        <div
-          ref={memoContentContainerRef}
-          className={cn(
-            "relative w-full max-w-full break-words text-base leading-6 space-y-1 whitespace-pre-wrap",
-            showCompactMode == "ALL" && "line-clamp-6 max-h-60",
-            contentClassName,
-          )}
-          onClick={onMemoContentClick}
-          onDoubleClick={onMemoContentDoubleClick}
-        >
-          {nodes.map((node, index) => {
-            if (prevNode?.type !== NodeType.LINE_BREAK && node.type === NodeType.LINE_BREAK && skipNextLineBreakFlag) {
-              skipNextLineBreakFlag = false;
-              return null;
-            }
-            prevNode = node;
-            skipNextLineBreakFlag = true;
-            return <Renderer key={`${node.type}-${index}`} index={String(index)} node={node} />;
-          })}
-          {showCompactMode == "ALL" && (
-            <div className="absolute bottom-0 left-0 w-full h-12 bg-linear-to-b from-transparent to-background pointer-events-none"></div>
-          )}
-        </div>
-        {showCompactMode != undefined && (
-          <div className="w-full mt-1">
-            <span
-              className="w-auto flex flex-row justify-start items-center cursor-pointer text-sm text-primary hover:opacity-80"
-              onClick={() => {
-                setShowCompactMode(compactStates[showCompactMode].nextState as ContentCompactView);
-              }}
-            >
-              {compactStates[showCompactMode].text}
-            </span>
-          </div>
+    <div className={`w-full flex flex-col justify-start items-start text-foreground ${className || ""}`}>
+      <div
+        ref={memoContentContainerRef}
+        className={cn(
+          "markdown-content relative w-full max-w-full wrap-break-word text-base leading-6",
+          showCompactMode === "ALL" && "line-clamp-6 max-h-60",
+          contentClassName,
         )}
+        onMouseUp={onClick}
+        onDoubleClick={onDoubleClick}
+      >
+        <ReactMarkdown
+          remarkPlugins={[remarkDisableSetext, remarkMath, remarkGfm, remarkBreaks, remarkTag, remarkPreserveType]}
+          rehypePlugins={[rehypeRaw, rehypeKatex, [rehypeSanitize, SANITIZE_SCHEMA]]}
+          components={{
+            // Child components consume from MemoViewContext directly
+            input: ((inputProps: React.ComponentProps<"input"> & { node?: Element }) => {
+              if (inputProps.node && isTaskListItemNode(inputProps.node)) {
+                return <TaskListItem {...inputProps} />;
+              }
+              return <input {...inputProps} />;
+            }) as React.ComponentType<React.ComponentProps<"input">>,
+            span: ((spanProps: React.ComponentProps<"span"> & { node?: Element }) => {
+              const { node, ...rest } = spanProps;
+              if (node && isTagNode(node)) {
+                return <Tag {...spanProps} />;
+              }
+              return <span {...rest} />;
+            }) as React.ComponentType<React.ComponentProps<"span">>,
+            pre: CodeBlock,
+            a: ({ href, children, ...aProps }) => (
+              <a href={href} target="_blank" rel="noopener noreferrer" {...aProps}>
+                {children}
+              </a>
+            ),
+          }}
+        >
+          {content}
+        </ReactMarkdown>
       </div>
-    </RendererContext.Provider>
+      {showCompactMode === "ALL" && (
+        <div className="absolute bottom-0 left-0 w-full h-12 bg-linear-to-b from-transparent to-background pointer-events-none"></div>
+      )}
+      {showCompactMode !== undefined && (
+        <div className="w-full mt-1">
+          <button
+            type="button"
+            className="w-auto flex flex-row justify-start items-center cursor-pointer text-sm text-primary hover:opacity-80 text-left"
+            onClick={toggleCompactMode}
+          >
+            {compactLabel}
+          </button>
+        </div>
+      )}
+    </div>
   );
-});
+};
 
 export default memo(MemoContent);

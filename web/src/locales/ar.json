@@ -251,21 +251,6 @@
       "title": "رموز الوصول",
       "token": "رمز"
     },
-    "user-sessions-section": {
-      "title": "الجلسات النشطة",
-      "description": "قائمة بجميع الجلسات النشطة لحسابك. تنتهي الجلسات تلقائيًا بعد أسبوعين من آخر نشاط. يمكنك إلغاء أي جلسة باستثناء الحالية.",
-      "device": "الجهاز",
-      "location": "الموقع",
-      "last-active": "آخر نشاط",
-      "expires": "ينتهي",
-      "current": "الحالية",
-      "never": "أبدًا",
-      "session-revocation": "هل أنت متأكد من إلغاء الجلسة {{sessionId}}؟ ستحتاج إلى تسجيل الدخول مرة أخرى على ذلك الجهاز.",
-      "session-revoked": "تم إلغاء الجلسة بنجاح",
-      "revoke-session": "إلغاء الجلسة",
-      "cannot-revoke-current": "لا يمكن إلغاء الجلسة الحالية",
-      "no-sessions": "لا توجد جلسات نشطة"
-    },
     "account-section": {
       "change-password": "تغيير كلمة المرور",
       "email-note": "اختياري",
@@ -294,7 +279,6 @@
     "memo-related-settings": {
       "content-lenght-limit": "حد طول المحتوى (بايت)",
       "enable-blur-nsfw-content": "تمكين طمس المحتوى الحساس (NSFW)",
-      "enable-link-preview": "تمكين معاينة الروابط",
       "enable-memo-comments": "تمكين تعليقات المذكرة",
       "enable-memo-location": "تمكين موقع المذكرة",
       "reactions": "تفاعلات",
@@ -380,7 +364,6 @@
         "locale": "لغة الخادم",
         "title": "تخصيص الخادم"
       },
-      "disable-markdown-shortcuts-in-editor": "تعطيل اختصارات Markdown في المحرر",
       "disable-password-login": "تعطيل تسجيل الدخول بكلمة المرور",
       "disable-password-login-final-warning": "يرجى كتابة \"CONFIRM\" إذا كنت متأكدًا مما تفعله.",
       "disable-password-login-warning": "سيؤدي ذلك إلى تعطيل تسجيل الدخول بكلمة المرور لجميع المستخدمين. لا يمكن تسجيل الدخول بدون التراجع عن هذا الإعداد في قاعدة البيانات إذا فشل مزودو الهوية. يجب أن تكون حذرًا عند إزالة مزود هوية",
@@ -410,7 +393,7 @@
       "title": "Webhooks",
       "url": "الرابط"
     },
-    "workspace-section": {
+    "instance-section": {
       "disallow-change-nickname": "عدم السماح بتغيير الاسم المستعار",
       "disallow-change-username": "عدم السماح بتغيير اسم المستخدم",
       "disallow-password-auth": "عدم السماح بالمصادقة بكلمة المرور",

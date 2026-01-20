@@ -3,23 +3,21 @@ package v1
 import (
 	"context"
 	"crypto/rand"
-	"encoding/base64"
 	"encoding/hex"
 	"fmt"
 	"net/http"
 	"regexp"
-	"slices"
 	"sort"
 	"strconv"
 	"strings"
 	"time"
 	"unicode"
 
-	"github.com/golang-jwt/jwt/v5"
+	"github.com/google/cel-go/cel"
+	"github.com/google/cel-go/common/ast"
 	"github.com/labstack/echo/v4"
 	"github.com/pkg/errors"
 	"golang.org/x/crypto/bcrypt"
-	"google.golang.org/genproto/googleapis/api/httpbody"
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/status"
 	"google.golang.org/protobuf/types/known/emptypb"
@@ -27,16 +25,19 @@ import (
 
 	"github.com/usememos/memos/internal/base"
 	"github.com/usememos/memos/internal/util"
-	"github.com/usememos/memos/plugin/filter"
 	v1pb "github.com/usememos/memos/proto/gen/api/v1"
 	storepb "github.com/usememos/memos/proto/gen/store"
+	"github.com/usememos/memos/server/auth"
 	"github.com/usememos/memos/store"
 )
 
 func (s *APIV1Service) ListUsers(ctx context.Context, request *v1pb.ListUsersRequest) (*v1pb.ListUsersResponse, error) {
-	currentUser, err := s.GetCurrentUser(ctx)
+	currentUser, err := s.fetchCurrentUser(ctx)
 	if err != nil {
 		return nil, status.Errorf(codes.Internal, "failed to get user: %v", err)
+	}
+	if currentUser == nil {
+		return nil, status.Errorf(codes.Unauthenticated, "user not authenticated")
 	}
 	if currentUser.Role != store.RoleHost && currentUser.Role != store.RoleAdmin {
 		return nil, status.Errorf(codes.PermissionDenied, "permission denied")
@@ -45,10 +46,13 @@ func (s *APIV1Service) ListUsers(ctx context.Context, request *v1pb.ListUsersReq
 	userFind := &store.FindUser{}
 
 	if request.Filter != "" {
-		if err := s.validateUserFilter(ctx, request.Filter); err != nil {
+		username, err := extractUsernameFromFilter(request.Filter)
+		if err != nil {
 			return nil, status.Errorf(codes.InvalidArgument, "invalid filter: %v", err)
 		}
-		userFind.Filters = append(userFind.Filters, request.Filter)
+		if username != "" {
+			userFind.Username = &username
+		}
 	}
 
 	users, err := s.Store.ListUsers(ctx, userFind)
@@ -69,13 +73,29 @@ func (s *APIV1Service) ListUsers(ctx context.Context, request *v1pb.ListUsersReq
 }
 
 func (s *APIV1Service) GetUser(ctx context.Context, request *v1pb.GetUserRequest) (*v1pb.User, error) {
-	userID, err := ExtractUserIDFromName(request.Name)
-	if err != nil {
-		return nil, status.Errorf(codes.InvalidArgument, "invalid user name: %v", err)
+	// Extract identifier from "users/{id_or_username}"
+	identifier := extractUserIdentifierFromName(request.Name)
+	if identifier == "" {
+		return nil, status.Errorf(codes.InvalidArgument, "invalid user name: %s", request.Name)
 	}
-	user, err := s.Store.GetUser(ctx, &store.FindUser{
-		ID: &userID,
-	})
+
+	var user *store.User
+	var err error
+
+	// Try to parse as numeric ID first
+	if userID, parseErr := strconv.ParseInt(identifier, 10, 32); parseErr == nil {
+		// It's a numeric ID
+		userID32 := int32(userID)
+		user, err = s.Store.GetUser(ctx, &store.FindUser{
+			ID: &userID32,
+		})
+	} else {
+		// It's a username
+		user, err = s.Store.GetUser(ctx, &store.FindUser{
+			Username: &identifier,
+		})
+	}
+
 	if err != nil {
 		return nil, status.Errorf(codes.Internal, "failed to get user: %v", err)
 	}
@@ -85,69 +105,47 @@ func (s *APIV1Service) GetUser(ctx context.Context, request *v1pb.GetUserRequest
 	return convertUserFromStore(user), nil
 }
 
-func (s *APIV1Service) GetUserAvatar(ctx context.Context, request *v1pb.GetUserAvatarRequest) (*httpbody.HttpBody, error) {
-	userID, err := ExtractUserIDFromName(request.Name)
-	if err != nil {
-		return nil, status.Errorf(codes.InvalidArgument, "invalid user name: %v", err)
-	}
-	user, err := s.Store.GetUser(ctx, &store.FindUser{
-		ID: &userID,
-	})
-	if err != nil {
-		return nil, status.Errorf(codes.Internal, "failed to get user: %v", err)
-	}
-	if user == nil {
-		return nil, status.Errorf(codes.NotFound, "user not found")
-	}
-	if user.AvatarURL == "" {
-		return nil, status.Errorf(codes.NotFound, "avatar not found")
-	}
-
-	imageType, base64Data, err := extractImageInfo(user.AvatarURL)
-	if err != nil {
-		return nil, status.Errorf(codes.Internal, "failed to extract image info: %v", err)
-	}
-	imageData, err := base64.StdEncoding.DecodeString(base64Data)
-	if err != nil {
-		return nil, status.Errorf(codes.Internal, "failed to decode string: %v", err)
-	}
-	httpBody := &httpbody.HttpBody{
-		ContentType: imageType,
-		Data:        imageData,
-	}
-	return httpBody, nil
-}
-
 func (s *APIV1Service) CreateUser(ctx context.Context, request *v1pb.CreateUserRequest) (*v1pb.User, error) {
-	// Check if there are any existing host users (for first-time setup detection)
-	hostUserType := store.RoleHost
-	existedHostUsers, err := s.Store.ListUsers(ctx, &store.FindUser{
-		Role: &hostUserType,
-	})
+	// Get current user (might be nil for unauthenticated requests)
+	currentUser, _ := s.fetchCurrentUser(ctx)
+
+	// Check if there are any existing users (for first-time setup detection)
+	limitOne := 1
+	allUsers, err := s.Store.ListUsers(ctx, &store.FindUser{Limit: &limitOne})
 	if err != nil {
-		return nil, status.Errorf(codes.Internal, "failed to list host users: %v", err)
+		return nil, status.Errorf(codes.Internal, "failed to list users: %v", err)
+	}
+	isFirstUser := len(allUsers) == 0
+
+	// Check registration settings FIRST (unless it's the very first user)
+	if !isFirstUser {
+		// Only allow user registration if it is enabled in the settings, or if the user is a superuser
+		if currentUser == nil || !isSuperUser(currentUser) {
+			instanceGeneralSetting, err := s.Store.GetInstanceGeneralSetting(ctx)
+			if err != nil {
+				return nil, status.Errorf(codes.Internal, "failed to get instance general setting, error: %v", err)
+			}
+			if instanceGeneralSetting.DisallowUserRegistration {
+				return nil, status.Errorf(codes.PermissionDenied, "user registration is not allowed")
+			}
+		}
 	}
 
-	// Determine the role to assign and check permissions
+	// Determine the role to assign
 	var roleToAssign store.Role
-	if len(existedHostUsers) == 0 {
+	if isFirstUser {
 		// First-time setup: create the first user as HOST (no authentication required)
 		roleToAssign = store.RoleHost
-	} else {
-		// Regular user creation: allow unauthenticated creation of normal users
-		// But if authenticated, check if user has HOST permission for any role
-		currentUser, err := s.GetCurrentUser(ctx)
-		if err == nil && currentUser != nil && currentUser.Role == store.RoleHost {
-			// Authenticated HOST user can create users with any role specified in request
-			if request.User.Role != v1pb.User_ROLE_UNSPECIFIED {
-				roleToAssign = convertUserRoleToStore(request.User.Role)
-			} else {
-				roleToAssign = store.RoleUser
-			}
+	} else if currentUser != nil && currentUser.Role == store.RoleHost {
+		// Authenticated HOST user can create users with any role specified in request
+		if request.User.Role != v1pb.User_ROLE_UNSPECIFIED {
+			roleToAssign = convertUserRoleToStore(request.User.Role)
 		} else {
-			// Unauthenticated or non-HOST users can only create normal users
 			roleToAssign = store.RoleUser
 		}
+	} else {
+		// Unauthenticated or non-HOST users can only create normal users
+		roleToAssign = store.RoleUser
 	}
 
 	if !base.UIDMatcher.MatchString(strings.ToLower(request.User.Username)) {
@@ -192,9 +190,12 @@ func (s *APIV1Service) UpdateUser(ctx context.Context, request *v1pb.UpdateUserR
 	if err != nil {
 		return nil, status.Errorf(codes.InvalidArgument, "invalid user name: %v", err)
 	}
-	currentUser, err := s.GetCurrentUser(ctx)
+	currentUser, err := s.fetchCurrentUser(ctx)
 	if err != nil {
 		return nil, status.Errorf(codes.Internal, "failed to get user: %v", err)
+	}
+	if currentUser == nil {
+		return nil, status.Errorf(codes.Unauthenticated, "user not authenticated")
 	}
 	// Check permission.
 	// Only allow admin or self to update user.
@@ -220,14 +221,14 @@ func (s *APIV1Service) UpdateUser(ctx context.Context, request *v1pb.UpdateUserR
 		ID:        user.ID,
 		UpdatedTs: &currentTs,
 	}
-	workspaceGeneralSetting, err := s.Store.GetWorkspaceGeneralSetting(ctx)
+	instanceGeneralSetting, err := s.Store.GetInstanceGeneralSetting(ctx)
 	if err != nil {
-		return nil, status.Errorf(codes.Internal, "failed to get workspace general setting: %v", err)
+		return nil, status.Errorf(codes.Internal, "failed to get instance general setting: %v", err)
 	}
 	for _, field := range request.UpdateMask.Paths {
 		switch field {
 		case "username":
-			if workspaceGeneralSetting.DisallowChangeUsername {
+			if instanceGeneralSetting.DisallowChangeUsername {
 				return nil, status.Errorf(codes.PermissionDenied, "permission denied: disallow change username")
 			}
 			if !base.UIDMatcher.MatchString(strings.ToLower(request.User.Username)) {
@@ -235,13 +236,31 @@ func (s *APIV1Service) UpdateUser(ctx context.Context, request *v1pb.UpdateUserR
 			}
 			update.Username = &request.User.Username
 		case "display_name":
-			if workspaceGeneralSetting.DisallowChangeNickname {
+			if instanceGeneralSetting.DisallowChangeNickname {
 				return nil, status.Errorf(codes.PermissionDenied, "permission denied: disallow change nickname")
 			}
 			update.Nickname = &request.User.DisplayName
 		case "email":
 			update.Email = &request.User.Email
 		case "avatar_url":
+			// Validate avatar MIME type to prevent XSS during upload
+			if request.User.AvatarUrl != "" {
+				imageType, _, err := extractImageInfo(request.User.AvatarUrl)
+				if err != nil {
+					return nil, status.Errorf(codes.InvalidArgument, "invalid avatar format: %v", err)
+				}
+				// Only allow safe image formats for avatars
+				allowedAvatarTypes := map[string]bool{
+					"image/png":  true,
+					"image/jpeg": true,
+					"image/jpg":  true,
+					"image/gif":  true,
+					"image/webp": true,
+				}
+				if !allowedAvatarTypes[imageType] {
+					return nil, status.Errorf(codes.InvalidArgument, "invalid avatar image type: %s. Only PNG, JPEG, GIF, and WebP are allowed", imageType)
+				}
+			}
 			update.AvatarURL = &request.User.AvatarUrl
 		case "description":
 			update.Description = &request.User.Description
@@ -280,7 +299,7 @@ func (s *APIV1Service) DeleteUser(ctx context.Context, request *v1pb.DeleteUserR
 	if err != nil {
 		return nil, status.Errorf(codes.InvalidArgument, "invalid user name: %v", err)
 	}
-	currentUser, err := s.GetCurrentUser(ctx)
+	currentUser, err := s.fetchCurrentUser(ctx)
 	if err != nil {
 		return nil, status.Errorf(codes.Internal, "failed to get user: %v", err)
 	}
@@ -320,9 +339,12 @@ func (s *APIV1Service) GetUserSetting(ctx context.Context, request *v1pb.GetUser
 		return nil, status.Errorf(codes.InvalidArgument, "invalid resource name: %v", err)
 	}
 
-	currentUser, err := s.GetCurrentUser(ctx)
+	currentUser, err := s.fetchCurrentUser(ctx)
 	if err != nil {
 		return nil, status.Errorf(codes.Internal, "failed to get current user: %v", err)
+	}
+	if currentUser == nil {
+		return nil, status.Errorf(codes.Unauthenticated, "user not authenticated")
 	}
 
 	// Only allow user to get their own settings
@@ -354,9 +376,12 @@ func (s *APIV1Service) UpdateUserSetting(ctx context.Context, request *v1pb.Upda
 		return nil, status.Errorf(codes.InvalidArgument, "invalid resource name: %v", err)
 	}
 
-	currentUser, err := s.GetCurrentUser(ctx)
+	currentUser, err := s.fetchCurrentUser(ctx)
 	if err != nil {
 		return nil, status.Errorf(codes.Internal, "failed to get current user: %v", err)
+	}
+	if currentUser == nil {
+		return nil, status.Errorf(codes.Unauthenticated, "user not authenticated")
 	}
 
 	// Only allow user to update their own settings
@@ -401,7 +426,7 @@ func (s *APIV1Service) UpdateUserSetting(ctx context.Context, request *v1pb.Upda
 	incomingGeneral := request.Setting.GetGeneralSetting()
 	for _, field := range request.UpdateMask.Paths {
 		switch field {
-		case "memoVisibility":
+		case "memo_visibility":
 			updatedGeneral.MemoVisibility = incomingGeneral.MemoVisibility
 		case "theme":
 			updatedGeneral.Theme = incomingGeneral.Theme
@@ -440,9 +465,12 @@ func (s *APIV1Service) ListUserSettings(ctx context.Context, request *v1pb.ListU
 		return nil, status.Errorf(codes.InvalidArgument, "invalid parent name: %v", err)
 	}
 
-	currentUser, err := s.GetCurrentUser(ctx)
+	currentUser, err := s.fetchCurrentUser(ctx)
 	if err != nil {
 		return nil, status.Errorf(codes.Internal, "failed to get current user: %v", err)
+	}
+	if currentUser == nil {
+		return nil, status.Errorf(codes.Unauthenticated, "user not authenticated")
 	}
 
 	// Only allow user to list their own settings
@@ -491,301 +519,163 @@ func (s *APIV1Service) ListUserSettings(ctx context.Context, request *v1pb.ListU
 	return response, nil
 }
 
-func (s *APIV1Service) ListUserAccessTokens(ctx context.Context, request *v1pb.ListUserAccessTokensRequest) (*v1pb.ListUserAccessTokensResponse, error) {
+// ListPersonalAccessTokens retrieves all Personal Access Tokens (PATs) for a user.
+//
+// Personal Access Tokens are used for:
+// - Mobile app authentication
+// - CLI tool authentication
+// - API client authentication
+// - Any programmatic access requiring Bearer token auth
+//
+// Security:
+// - Only the token owner can list their tokens
+// - Returns token metadata only (not the actual token value)
+// - Invalid or expired tokens are filtered out
+//
+// Authentication: Required (session cookie or access token)
+// Authorization: User can only list their own tokens.
+func (s *APIV1Service) ListPersonalAccessTokens(ctx context.Context, request *v1pb.ListPersonalAccessTokensRequest) (*v1pb.ListPersonalAccessTokensResponse, error) {
 	userID, err := ExtractUserIDFromName(request.Parent)
 	if err != nil {
 		return nil, status.Errorf(codes.InvalidArgument, "invalid user name: %v", err)
 	}
 
-	currentUser, err := s.GetCurrentUser(ctx)
+	// Verify permission
+	claims := auth.GetUserClaims(ctx)
+	if claims == nil || claims.UserID != userID {
+		currentUser, _ := s.fetchCurrentUser(ctx)
+		if currentUser == nil || (currentUser.ID != userID && currentUser.Role != store.RoleHost && currentUser.Role != store.RoleAdmin) {
+			return nil, status.Errorf(codes.PermissionDenied, "permission denied")
+		}
+	}
+
+	tokens, err := s.Store.GetUserPersonalAccessTokens(ctx, userID)
 	if err != nil {
-		return nil, status.Errorf(codes.Internal, "failed to get current user: %v", err)
-	}
-	if currentUser == nil {
-		return nil, status.Errorf(codes.PermissionDenied, "permission denied")
-	}
-	if currentUser.ID != userID {
-		return nil, status.Errorf(codes.PermissionDenied, "permission denied")
+		return nil, status.Errorf(codes.Internal, "failed to get access tokens: %v", err)
 	}
 
-	userAccessTokens, err := s.Store.GetUserAccessTokens(ctx, userID)
-	if err != nil {
-		return nil, status.Errorf(codes.Internal, "failed to list access tokens: %v", err)
-	}
-
-	accessTokens := []*v1pb.UserAccessToken{}
-	for _, userAccessToken := range userAccessTokens {
-		claims := &ClaimsMessage{}
-		_, err := jwt.ParseWithClaims(userAccessToken.AccessToken, claims, func(t *jwt.Token) (any, error) {
-			if t.Method.Alg() != jwt.SigningMethodHS256.Name {
-				return nil, errors.Errorf("unexpected access token signing method=%v, expect %v", t.Header["alg"], jwt.SigningMethodHS256)
-			}
-			if kid, ok := t.Header["kid"].(string); ok {
-				if kid == "v1" {
-					return []byte(s.Secret), nil
-				}
-			}
-			return nil, errors.Errorf("unexpected access token kid=%v", t.Header["kid"])
-		})
-		if err != nil {
-			// If the access token is invalid or expired, just ignore it.
-			continue
+	personalAccessTokens := make([]*v1pb.PersonalAccessToken, len(tokens))
+	for i, token := range tokens {
+		personalAccessTokens[i] = &v1pb.PersonalAccessToken{
+			Name:        fmt.Sprintf("%s/personalAccessTokens/%s", request.Parent, token.TokenId),
+			Description: token.Description,
+			ExpiresAt:   token.ExpiresAt,
+			CreatedAt:   token.CreatedAt,
+			LastUsedAt:  token.LastUsedAt,
 		}
-
-		accessTokenResponse := &v1pb.UserAccessToken{
-			Name:        fmt.Sprintf("users/%d/accessTokens/%s", userID, userAccessToken.AccessToken),
-			AccessToken: userAccessToken.AccessToken,
-			Description: userAccessToken.Description,
-			IssuedAt:    timestamppb.New(claims.IssuedAt.Time),
-		}
-		if claims.ExpiresAt != nil {
-			accessTokenResponse.ExpiresAt = timestamppb.New(claims.ExpiresAt.Time)
-		}
-		accessTokens = append(accessTokens, accessTokenResponse)
 	}
 
-	// Sort by issued time in descending order.
-	slices.SortFunc(accessTokens, func(i, j *v1pb.UserAccessToken) int {
-		return int(i.IssuedAt.Seconds - j.IssuedAt.Seconds)
-	})
-	response := &v1pb.ListUserAccessTokensResponse{
-		AccessTokens: accessTokens,
-	}
-	return response, nil
+	return &v1pb.ListPersonalAccessTokensResponse{PersonalAccessTokens: personalAccessTokens}, nil
 }
 
-func (s *APIV1Service) CreateUserAccessToken(ctx context.Context, request *v1pb.CreateUserAccessTokenRequest) (*v1pb.UserAccessToken, error) {
+// CreatePersonalAccessToken creates a new Personal Access Token (PAT) for a user.
+//
+// Use cases:
+// - User manually creates token in settings for mobile app
+// - User creates token for CLI tool
+// - User creates token for third-party integration
+//
+// Token properties:
+// - Random string with memos_pat_ prefix
+// - SHA-256 hash stored in database
+// - Optional expiration time (can be never-expiring)
+// - User-provided description for identification
+//
+// Security considerations:
+// - Full token is only shown ONCE (in this response)
+// - User should copy and store it securely
+// - Token can be revoked by deleting it from settings
+//
+// Authentication: Required (session cookie or access token)
+// Authorization: User can only create tokens for themselves.
+func (s *APIV1Service) CreatePersonalAccessToken(ctx context.Context, request *v1pb.CreatePersonalAccessTokenRequest) (*v1pb.CreatePersonalAccessTokenResponse, error) {
 	userID, err := ExtractUserIDFromName(request.Parent)
 	if err != nil {
 		return nil, status.Errorf(codes.InvalidArgument, "invalid user name: %v", err)
 	}
-	currentUser, err := s.GetCurrentUser(ctx)
-	if err != nil {
-		return nil, status.Errorf(codes.Internal, "failed to get current user: %v", err)
-	}
-	if currentUser == nil {
-		return nil, status.Errorf(codes.PermissionDenied, "permission denied")
-	}
-	if currentUser.ID != userID {
-		return nil, status.Errorf(codes.PermissionDenied, "permission denied")
-	}
 
-	expiresAt := time.Time{}
-	if request.AccessToken.ExpiresAt != nil {
-		expiresAt = request.AccessToken.ExpiresAt.AsTime()
-	}
-
-	accessToken, err := GenerateAccessToken(currentUser.Username, currentUser.ID, expiresAt, []byte(s.Secret))
-	if err != nil {
-		return nil, status.Errorf(codes.Internal, "failed to generate access token: %v", err)
-	}
-
-	claims := &ClaimsMessage{}
-	_, err = jwt.ParseWithClaims(accessToken, claims, func(t *jwt.Token) (any, error) {
-		if t.Method.Alg() != jwt.SigningMethodHS256.Name {
-			return nil, errors.Errorf("unexpected access token signing method=%v, expect %v", t.Header["alg"], jwt.SigningMethodHS256)
+	// Verify permission
+	claims := auth.GetUserClaims(ctx)
+	if claims == nil || claims.UserID != userID {
+		currentUser, _ := s.fetchCurrentUser(ctx)
+		if currentUser == nil || currentUser.ID != userID {
+			return nil, status.Errorf(codes.PermissionDenied, "permission denied")
 		}
-		if kid, ok := t.Header["kid"].(string); ok {
-			if kid == "v1" {
-				return []byte(s.Secret), nil
-			}
-		}
-		return nil, errors.Errorf("unexpected access token kid=%v", t.Header["kid"])
-	})
-	if err != nil {
-		return nil, status.Errorf(codes.Internal, "failed to parse access token: %v", err)
 	}
 
-	// Upsert the access token to user setting store.
-	if err := s.UpsertAccessTokenToStore(ctx, currentUser, accessToken, request.AccessToken.Description); err != nil {
-		return nil, status.Errorf(codes.Internal, "failed to upsert access token to store: %v", err)
+	// Generate PAT
+	tokenID := util.GenUUID()
+	token := auth.GeneratePersonalAccessToken()
+	tokenHash := auth.HashPersonalAccessToken(token)
+
+	var expiresAt *timestamppb.Timestamp
+	if request.ExpiresInDays > 0 {
+		expiresAt = timestamppb.New(time.Now().AddDate(0, 0, int(request.ExpiresInDays)))
 	}
 
-	userAccessToken := &v1pb.UserAccessToken{
-		Name:        fmt.Sprintf("users/%d/accessTokens/%s", userID, accessToken),
-		AccessToken: accessToken,
-		Description: request.AccessToken.Description,
-		IssuedAt:    timestamppb.New(claims.IssuedAt.Time),
-	}
-	if claims.ExpiresAt != nil {
-		userAccessToken.ExpiresAt = timestamppb.New(claims.ExpiresAt.Time)
-	}
-	return userAccessToken, nil
-}
-
-func (s *APIV1Service) DeleteUserAccessToken(ctx context.Context, request *v1pb.DeleteUserAccessTokenRequest) (*emptypb.Empty, error) {
-	// Extract user ID from the access token resource name
-	// Format: users/{user}/accessTokens/{access_token}
-	parts := strings.Split(request.Name, "/")
-	if len(parts) != 4 || parts[0] != "users" || parts[2] != "accessTokens" {
-		return nil, status.Errorf(codes.InvalidArgument, "invalid access token name format: %s", request.Name)
+	patRecord := &storepb.PersonalAccessTokensUserSetting_PersonalAccessToken{
+		TokenId:     tokenID,
+		TokenHash:   tokenHash,
+		Description: request.Description,
+		ExpiresAt:   expiresAt,
+		CreatedAt:   timestamppb.Now(),
 	}
 
-	userID, err := ExtractUserIDFromName(fmt.Sprintf("users/%s", parts[1]))
-	if err != nil {
-		return nil, status.Errorf(codes.InvalidArgument, "invalid user name: %v", err)
-	}
-	accessTokenToDelete := parts[3]
-
-	currentUser, err := s.GetCurrentUser(ctx)
-	if err != nil {
-		return nil, status.Errorf(codes.Internal, "failed to get current user: %v", err)
-	}
-	if currentUser == nil {
-		return nil, status.Errorf(codes.PermissionDenied, "permission denied")
-	}
-	if currentUser.ID != userID {
-		return nil, status.Errorf(codes.PermissionDenied, "permission denied")
+	if err := s.Store.AddUserPersonalAccessToken(ctx, userID, patRecord); err != nil {
+		return nil, status.Errorf(codes.Internal, "failed to create access token: %v", err)
 	}
 
-	userAccessTokens, err := s.Store.GetUserAccessTokens(ctx, currentUser.ID)
-	if err != nil {
-		return nil, status.Errorf(codes.Internal, "failed to list access tokens: %v", err)
-	}
-	updatedUserAccessTokens := []*storepb.AccessTokensUserSetting_AccessToken{}
-	for _, userAccessToken := range userAccessTokens {
-		if userAccessToken.AccessToken == accessTokenToDelete {
-			continue
-		}
-		updatedUserAccessTokens = append(updatedUserAccessTokens, userAccessToken)
-	}
-	if _, err := s.Store.UpsertUserSetting(ctx, &storepb.UserSetting{
-		UserId: currentUser.ID,
-		Key:    storepb.UserSetting_ACCESS_TOKENS,
-		Value: &storepb.UserSetting_AccessTokens{
-			AccessTokens: &storepb.AccessTokensUserSetting{
-				AccessTokens: updatedUserAccessTokens,
-			},
+	return &v1pb.CreatePersonalAccessTokenResponse{
+		PersonalAccessToken: &v1pb.PersonalAccessToken{
+			Name:        fmt.Sprintf("%s/personalAccessTokens/%s", request.Parent, tokenID),
+			Description: request.Description,
+			ExpiresAt:   expiresAt,
+			CreatedAt:   patRecord.CreatedAt,
 		},
-	}); err != nil {
-		return nil, status.Errorf(codes.Internal, "failed to upsert user setting: %v", err)
+		Token: token, // Only returned on creation
+	}, nil
+}
+
+// DeletePersonalAccessToken revokes a Personal Access Token.
+//
+// This endpoint:
+// 1. Removes the token from the user's access tokens list
+// 2. Immediately invalidates the token (subsequent API calls with it will fail)
+//
+// Use cases:
+// - User revokes a compromised token
+// - User removes token for unused app/device
+// - User cleans up old tokens
+//
+// Authentication: Required (session cookie or access token)
+// Authorization: User can only delete their own tokens.
+func (s *APIV1Service) DeletePersonalAccessToken(ctx context.Context, request *v1pb.DeletePersonalAccessTokenRequest) (*emptypb.Empty, error) {
+	// Parse name: users/{user_id}/personalAccessTokens/{token_id}
+	parts := strings.Split(request.Name, "/")
+	if len(parts) != 4 || parts[0] != "users" || parts[2] != "personalAccessTokens" {
+		return nil, status.Errorf(codes.InvalidArgument, "invalid personal access token name")
+	}
+
+	userID, err := util.ConvertStringToInt32(parts[1])
+	if err != nil {
+		return nil, status.Errorf(codes.InvalidArgument, "invalid user ID: %v", err)
+	}
+	tokenID := parts[3]
+
+	// Verify permission
+	claims := auth.GetUserClaims(ctx)
+	if claims == nil || claims.UserID != userID {
+		currentUser, _ := s.fetchCurrentUser(ctx)
+		if currentUser == nil || currentUser.ID != userID {
+			return nil, status.Errorf(codes.PermissionDenied, "permission denied")
+		}
+	}
+
+	if err := s.Store.RemoveUserPersonalAccessToken(ctx, userID, tokenID); err != nil {
+		return nil, status.Errorf(codes.Internal, "failed to delete access token: %v", err)
 	}
 
 	return &emptypb.Empty{}, nil
-}
-
-func (s *APIV1Service) ListUserSessions(ctx context.Context, request *v1pb.ListUserSessionsRequest) (*v1pb.ListUserSessionsResponse, error) {
-	userID, err := ExtractUserIDFromName(request.Parent)
-	if err != nil {
-		return nil, status.Errorf(codes.InvalidArgument, "invalid user name: %v", err)
-	}
-
-	currentUser, err := s.GetCurrentUser(ctx)
-	if err != nil {
-		return nil, status.Errorf(codes.Internal, "failed to get current user: %v", err)
-	}
-	if currentUser == nil {
-		return nil, status.Errorf(codes.PermissionDenied, "permission denied")
-	}
-	if currentUser.ID != userID {
-		return nil, status.Errorf(codes.PermissionDenied, "permission denied")
-	}
-
-	userSessions, err := s.Store.GetUserSessions(ctx, userID)
-	if err != nil {
-		return nil, status.Errorf(codes.Internal, "failed to list sessions: %v", err)
-	}
-
-	sessions := []*v1pb.UserSession{}
-	for _, userSession := range userSessions {
-		sessionResponse := &v1pb.UserSession{
-			Name:             fmt.Sprintf("users/%d/sessions/%s", userID, userSession.SessionId),
-			SessionId:        userSession.SessionId,
-			CreateTime:       userSession.CreateTime,
-			LastAccessedTime: userSession.LastAccessedTime,
-		}
-
-		if userSession.ClientInfo != nil {
-			sessionResponse.ClientInfo = &v1pb.UserSession_ClientInfo{
-				UserAgent:  userSession.ClientInfo.UserAgent,
-				IpAddress:  userSession.ClientInfo.IpAddress,
-				DeviceType: userSession.ClientInfo.DeviceType,
-				Os:         userSession.ClientInfo.Os,
-				Browser:    userSession.ClientInfo.Browser,
-			}
-		}
-
-		sessions = append(sessions, sessionResponse)
-	}
-
-	// Sort by last accessed time in descending order.
-	slices.SortFunc(sessions, func(i, j *v1pb.UserSession) int {
-		return int(j.LastAccessedTime.Seconds - i.LastAccessedTime.Seconds)
-	})
-
-	response := &v1pb.ListUserSessionsResponse{
-		Sessions: sessions,
-	}
-	return response, nil
-}
-
-func (s *APIV1Service) RevokeUserSession(ctx context.Context, request *v1pb.RevokeUserSessionRequest) (*emptypb.Empty, error) {
-	// Extract user ID and session ID from the session resource name
-	// Format: users/{user}/sessions/{session}
-	parts := strings.Split(request.Name, "/")
-	if len(parts) != 4 || parts[0] != "users" || parts[2] != "sessions" {
-		return nil, status.Errorf(codes.InvalidArgument, "invalid session name format: %s", request.Name)
-	}
-
-	userID, err := ExtractUserIDFromName(fmt.Sprintf("users/%s", parts[1]))
-	if err != nil {
-		return nil, status.Errorf(codes.InvalidArgument, "invalid user name: %v", err)
-	}
-	sessionIDToRevoke := parts[3]
-
-	currentUser, err := s.GetCurrentUser(ctx)
-	if err != nil {
-		return nil, status.Errorf(codes.Internal, "failed to get current user: %v", err)
-	}
-	if currentUser == nil {
-		return nil, status.Errorf(codes.PermissionDenied, "permission denied")
-	}
-	if currentUser.ID != userID {
-		return nil, status.Errorf(codes.PermissionDenied, "permission denied")
-	}
-
-	if err := s.Store.RemoveUserSession(ctx, userID, sessionIDToRevoke); err != nil {
-		return nil, status.Errorf(codes.Internal, "failed to revoke session: %v", err)
-	}
-
-	return &emptypb.Empty{}, nil
-}
-
-// UpsertUserSession adds or updates a user session.
-func (s *APIV1Service) UpsertUserSession(ctx context.Context, userID int32, sessionID string, clientInfo *storepb.SessionsUserSetting_ClientInfo) error {
-	session := &storepb.SessionsUserSetting_Session{
-		SessionId:        sessionID,
-		CreateTime:       timestamppb.Now(),
-		LastAccessedTime: timestamppb.Now(),
-		ClientInfo:       clientInfo,
-	}
-
-	return s.Store.AddUserSession(ctx, userID, session)
-}
-
-func (s *APIV1Service) UpsertAccessTokenToStore(ctx context.Context, user *store.User, accessToken, description string) error {
-	userAccessTokens, err := s.Store.GetUserAccessTokens(ctx, user.ID)
-	if err != nil {
-		return errors.Wrap(err, "failed to get user access tokens")
-	}
-	userAccessToken := storepb.AccessTokensUserSetting_AccessToken{
-		AccessToken: accessToken,
-		Description: description,
-	}
-	userAccessTokens = append(userAccessTokens, &userAccessToken)
-
-	if _, err := s.Store.UpsertUserSetting(ctx, &storepb.UserSetting{
-		UserId: user.ID,
-		Key:    storepb.UserSetting_ACCESS_TOKENS,
-		Value: &storepb.UserSetting_AccessTokens{
-			AccessTokens: &storepb.AccessTokensUserSetting{
-				AccessTokens: userAccessTokens,
-			},
-		},
-	}); err != nil {
-		return errors.Wrap(err, "failed to upsert user setting")
-	}
-	return nil
 }
 
 func (s *APIV1Service) ListUserWebhooks(ctx context.Context, request *v1pb.ListUserWebhooksRequest) (*v1pb.ListUserWebhooksResponse, error) {
@@ -794,9 +684,12 @@ func (s *APIV1Service) ListUserWebhooks(ctx context.Context, request *v1pb.ListU
 		return nil, status.Errorf(codes.InvalidArgument, "invalid parent: %v", err)
 	}
 
-	currentUser, err := s.GetCurrentUser(ctx)
+	currentUser, err := s.fetchCurrentUser(ctx)
 	if err != nil {
 		return nil, status.Errorf(codes.Internal, "failed to get current user: %v", err)
+	}
+	if currentUser == nil {
+		return nil, status.Errorf(codes.Unauthenticated, "user not authenticated")
 	}
 	if currentUser.ID != userID && currentUser.Role != store.RoleHost && currentUser.Role != store.RoleAdmin {
 		return nil, status.Errorf(codes.PermissionDenied, "permission denied")
@@ -823,9 +716,12 @@ func (s *APIV1Service) CreateUserWebhook(ctx context.Context, request *v1pb.Crea
 		return nil, status.Errorf(codes.InvalidArgument, "invalid parent: %v", err)
 	}
 
-	currentUser, err := s.GetCurrentUser(ctx)
+	currentUser, err := s.fetchCurrentUser(ctx)
 	if err != nil {
 		return nil, status.Errorf(codes.Internal, "failed to get current user: %v", err)
+	}
+	if currentUser == nil {
+		return nil, status.Errorf(codes.Unauthenticated, "user not authenticated")
 	}
 	if currentUser.ID != userID && currentUser.Role != store.RoleHost && currentUser.Role != store.RoleAdmin {
 		return nil, status.Errorf(codes.PermissionDenied, "permission denied")
@@ -860,9 +756,12 @@ func (s *APIV1Service) UpdateUserWebhook(ctx context.Context, request *v1pb.Upda
 		return nil, status.Errorf(codes.InvalidArgument, "invalid webhook name: %v", err)
 	}
 
-	currentUser, err := s.GetCurrentUser(ctx)
+	currentUser, err := s.fetchCurrentUser(ctx)
 	if err != nil {
 		return nil, status.Errorf(codes.Internal, "failed to get current user: %v", err)
+	}
+	if currentUser == nil {
+		return nil, status.Errorf(codes.Unauthenticated, "user not authenticated")
 	}
 	if currentUser.ID != userID && currentUser.Role != store.RoleHost && currentUser.Role != store.RoleAdmin {
 		return nil, status.Errorf(codes.PermissionDenied, "permission denied")
@@ -929,9 +828,12 @@ func (s *APIV1Service) DeleteUserWebhook(ctx context.Context, request *v1pb.Dele
 		return nil, status.Errorf(codes.InvalidArgument, "invalid webhook name: %v", err)
 	}
 
-	currentUser, err := s.GetCurrentUser(ctx)
+	currentUser, err := s.fetchCurrentUser(ctx)
 	if err != nil {
 		return nil, status.Errorf(codes.Internal, "failed to get current user: %v", err)
+	}
+	if currentUser == nil {
+		return nil, status.Errorf(codes.Unauthenticated, "user not authenticated")
 	}
 	if currentUser.ID != userID && currentUser.Role != store.RoleHost && currentUser.Role != store.RoleAdmin {
 		return nil, status.Errorf(codes.PermissionDenied, "permission denied")
@@ -1018,7 +920,7 @@ func convertUserFromStore(user *store.User) *v1pb.User {
 		// Check if avatar url is base64 format.
 		_, _, err := extractImageInfo(user.AvatarURL)
 		if err == nil {
-			userpb.AvatarUrl = fmt.Sprintf("/api/v1/%s/avatar", userpb.Name)
+			userpb.AvatarUrl = fmt.Sprintf("/file/%s/avatar", userpb.Name)
 		} else {
 			userpb.AvatarUrl = user.AvatarURL
 		}
@@ -1045,18 +947,18 @@ func convertUserRoleToStore(role v1pb.User_Role) store.Role {
 		return store.RoleHost
 	case v1pb.User_ADMIN:
 		return store.RoleAdmin
-	case v1pb.User_USER:
-		return store.RoleUser
 	default:
 		return store.RoleUser
 	}
 }
 
+// extractImageInfo extracts image type and base64 data from a data URI.
+// Data URI format: data:image/png;base64,iVBORw0KGgo...
 func extractImageInfo(dataURI string) (string, string, error) {
 	dataURIRegex := regexp.MustCompile(`^data:(?P<type>.+);base64,(?P<base64>.+)`)
 	matches := dataURIRegex.FindStringSubmatch(dataURI)
 	if len(matches) != 3 {
-		return "", "", errors.New("Invalid data URI format")
+		return "", "", errors.New("invalid data URI format")
 	}
 	imageType := matches[1]
 	base64Data := matches[2]
@@ -1088,10 +990,6 @@ func convertSettingKeyToStore(key string) (storepb.UserSetting_Key, error) {
 	switch key {
 	case v1pb.UserSetting_Key_name[int32(v1pb.UserSetting_GENERAL)]:
 		return storepb.UserSetting_GENERAL, nil
-	case v1pb.UserSetting_Key_name[int32(v1pb.UserSetting_SESSIONS)]:
-		return storepb.UserSetting_SESSIONS, nil
-	case v1pb.UserSetting_Key_name[int32(v1pb.UserSetting_ACCESS_TOKENS)]:
-		return storepb.UserSetting_ACCESS_TOKENS, nil
 	case v1pb.UserSetting_Key_name[int32(v1pb.UserSetting_WEBHOOKS)]:
 		return storepb.UserSetting_WEBHOOKS, nil
 	default:
@@ -1104,10 +1002,6 @@ func convertSettingKeyFromStore(key storepb.UserSetting_Key) string {
 	switch key {
 	case storepb.UserSetting_GENERAL:
 		return v1pb.UserSetting_Key_name[int32(v1pb.UserSetting_GENERAL)]
-	case storepb.UserSetting_SESSIONS:
-		return v1pb.UserSetting_Key_name[int32(v1pb.UserSetting_SESSIONS)]
-	case storepb.UserSetting_ACCESS_TOKENS:
-		return v1pb.UserSetting_Key_name[int32(v1pb.UserSetting_ACCESS_TOKENS)]
 	case storepb.UserSetting_SHORTCUTS:
 		return "SHORTCUTS" // Not defined in API proto
 	case storepb.UserSetting_WEBHOOKS:
@@ -1127,22 +1021,6 @@ func convertUserSettingFromStore(storeSetting *storepb.UserSetting, userID int32
 		}
 
 		switch key {
-		case storepb.UserSetting_GENERAL:
-			setting.Value = &v1pb.UserSetting_GeneralSetting_{
-				GeneralSetting: getDefaultUserGeneralSetting(),
-			}
-		case storepb.UserSetting_SESSIONS:
-			setting.Value = &v1pb.UserSetting_SessionsSetting_{
-				SessionsSetting: &v1pb.UserSetting_SessionsSetting{
-					Sessions: []*v1pb.UserSession{},
-				},
-			}
-		case storepb.UserSetting_ACCESS_TOKENS:
-			setting.Value = &v1pb.UserSetting_AccessTokensSetting_{
-				AccessTokensSetting: &v1pb.UserSetting_AccessTokensSetting{
-					AccessTokens: []*v1pb.UserAccessToken{},
-				},
-			}
 		case storepb.UserSetting_WEBHOOKS:
 			setting.Value = &v1pb.UserSetting_WebhooksSetting_{
 				WebhooksSetting: &v1pb.UserSetting_WebhooksSetting{
@@ -1177,46 +1055,6 @@ func convertUserSettingFromStore(storeSetting *storepb.UserSetting, userID int32
 			setting.Value = &v1pb.UserSetting_GeneralSetting_{
 				GeneralSetting: getDefaultUserGeneralSetting(),
 			}
-		}
-	case storepb.UserSetting_SESSIONS:
-		sessions := storeSetting.GetSessions()
-		apiSessions := make([]*v1pb.UserSession, 0, len(sessions.Sessions))
-		for _, session := range sessions.Sessions {
-			apiSession := &v1pb.UserSession{
-				Name:             fmt.Sprintf("users/%d/sessions/%s", userID, session.SessionId),
-				SessionId:        session.SessionId,
-				CreateTime:       session.CreateTime,
-				LastAccessedTime: session.LastAccessedTime,
-				ClientInfo: &v1pb.UserSession_ClientInfo{
-					UserAgent:  session.ClientInfo.UserAgent,
-					IpAddress:  session.ClientInfo.IpAddress,
-					DeviceType: session.ClientInfo.DeviceType,
-					Os:         session.ClientInfo.Os,
-					Browser:    session.ClientInfo.Browser,
-				},
-			}
-			apiSessions = append(apiSessions, apiSession)
-		}
-		setting.Value = &v1pb.UserSetting_SessionsSetting_{
-			SessionsSetting: &v1pb.UserSetting_SessionsSetting{
-				Sessions: apiSessions,
-			},
-		}
-	case storepb.UserSetting_ACCESS_TOKENS:
-		accessTokens := storeSetting.GetAccessTokens()
-		apiTokens := make([]*v1pb.UserAccessToken, 0, len(accessTokens.AccessTokens))
-		for _, token := range accessTokens.AccessTokens {
-			apiToken := &v1pb.UserAccessToken{
-				Name:        fmt.Sprintf("users/%d/accessTokens/%s", userID, token.AccessToken),
-				AccessToken: token.AccessToken,
-				Description: token.Description,
-			}
-			apiTokens = append(apiTokens, apiToken)
-		}
-		setting.Value = &v1pb.UserSetting_AccessTokensSetting_{
-			AccessTokensSetting: &v1pb.UserSetting_AccessTokensSetting{
-				AccessTokens: apiTokens,
-			},
 		}
 	case storepb.UserSetting_WEBHOOKS:
 		webhooks := storeSetting.GetWebhooks()
@@ -1264,50 +1102,6 @@ func convertUserSettingToStore(apiSetting *v1pb.UserSetting, userID int32, key s
 		} else {
 			return nil, errors.Errorf("general setting is required")
 		}
-	case storepb.UserSetting_SESSIONS:
-		if sessions := apiSetting.GetSessionsSetting(); sessions != nil {
-			storeSessions := make([]*storepb.SessionsUserSetting_Session, 0, len(sessions.Sessions))
-			for _, session := range sessions.Sessions {
-				storeSession := &storepb.SessionsUserSetting_Session{
-					SessionId:        session.SessionId,
-					CreateTime:       session.CreateTime,
-					LastAccessedTime: session.LastAccessedTime,
-					ClientInfo: &storepb.SessionsUserSetting_ClientInfo{
-						UserAgent:  session.ClientInfo.UserAgent,
-						IpAddress:  session.ClientInfo.IpAddress,
-						DeviceType: session.ClientInfo.DeviceType,
-						Os:         session.ClientInfo.Os,
-						Browser:    session.ClientInfo.Browser,
-					},
-				}
-				storeSessions = append(storeSessions, storeSession)
-			}
-			storeSetting.Value = &storepb.UserSetting_Sessions{
-				Sessions: &storepb.SessionsUserSetting{
-					Sessions: storeSessions,
-				},
-			}
-		} else {
-			return nil, errors.Errorf("sessions setting is required")
-		}
-	case storepb.UserSetting_ACCESS_TOKENS:
-		if accessTokens := apiSetting.GetAccessTokensSetting(); accessTokens != nil {
-			storeTokens := make([]*storepb.AccessTokensUserSetting_AccessToken, 0, len(accessTokens.AccessTokens))
-			for _, token := range accessTokens.AccessTokens {
-				storeToken := &storepb.AccessTokensUserSetting_AccessToken{
-					AccessToken: token.AccessToken,
-					Description: token.Description,
-				}
-				storeTokens = append(storeTokens, storeToken)
-			}
-			storeSetting.Value = &storepb.UserSetting_AccessTokens{
-				AccessTokens: &storepb.AccessTokensUserSetting{
-					AccessTokens: storeTokens,
-				},
-			}
-		} else {
-			return nil, errors.Errorf("access tokens setting is required")
-		}
 	case storepb.UserSetting_WEBHOOKS:
 		if webhooks := apiSetting.GetWebhooksSetting(); webhooks != nil {
 			storeWebhooks := make([]*storepb.WebhooksUserSetting_Webhook, 0, len(webhooks.Webhooks))
@@ -1344,38 +1138,309 @@ func extractWebhookIDFromName(name string) string {
 	return ""
 }
 
-// validateUserFilter validates the user filter string.
-func (s *APIV1Service) validateUserFilter(_ context.Context, filterStr string) error {
+// extractUsernameFromFilter extracts username from the filter string using CEL.
+// Supported filter format: "username == 'steven'"
+// Returns the username value and an error if the filter format is invalid.
+func extractUsernameFromFilter(filterStr string) (string, error) {
+	filterStr = strings.TrimSpace(filterStr)
 	if filterStr == "" {
-		return errors.New("filter cannot be empty")
+		return "", nil
 	}
-	// Validate the filter.
-	parsedExpr, err := filter.Parse(filterStr, filter.UserFilterCELAttributes...)
-	if err != nil {
-		return errors.Wrap(err, "failed to parse filter")
-	}
-	convertCtx := filter.NewConvertContext()
 
-	// Determine the dialect based on the actual database driver
-	var dialect filter.SQLDialect
-	switch s.Profile.Driver {
-	case "sqlite":
-		dialect = &filter.SQLiteDialect{}
-	case "mysql":
-		dialect = &filter.MySQLDialect{}
-	case "postgres":
-		dialect = &filter.PostgreSQLDialect{}
+	// Create CEL environment with username variable
+	env, err := cel.NewEnv(
+		cel.Variable("username", cel.StringType),
+	)
+	if err != nil {
+		return "", errors.Wrap(err, "failed to create CEL environment")
+	}
+
+	// Parse and check the filter expression
+	celAST, issues := env.Compile(filterStr)
+	if issues != nil && issues.Err() != nil {
+		return "", errors.Wrapf(issues.Err(), "invalid filter expression: %s", filterStr)
+	}
+
+	// Extract username from the AST
+	username, err := extractUsernameFromAST(celAST.NativeRep().Expr())
+	if err != nil {
+		return "", err
+	}
+
+	return username, nil
+}
+
+// extractUsernameFromAST extracts the username value from a CEL AST expression.
+func extractUsernameFromAST(expr ast.Expr) (string, error) {
+	if expr == nil {
+		return "", errors.New("empty expression")
+	}
+
+	// Check if this is a call expression (for ==, !=, etc.)
+	if expr.Kind() != ast.CallKind {
+		return "", errors.New("filter must be a comparison expression (e.g., username == 'value')")
+	}
+
+	call := expr.AsCall()
+
+	// We only support == operator
+	if call.FunctionName() != "_==_" {
+		return "", errors.Errorf("unsupported operator: %s (only '==' is supported)", call.FunctionName())
+	}
+
+	// The call should have exactly 2 arguments
+	args := call.Args()
+	if len(args) != 2 {
+		return "", errors.New("invalid comparison expression")
+	}
+
+	// Try to extract username from either left or right side
+	if username, ok := extractUsernameFromComparison(args[0], args[1]); ok {
+		return username, nil
+	}
+	if username, ok := extractUsernameFromComparison(args[1], args[0]); ok {
+		return username, nil
+	}
+
+	return "", errors.New("filter must compare 'username' field with a string constant")
+}
+
+// extractUsernameFromComparison tries to extract username value if left is 'username' ident and right is a string constant.
+func extractUsernameFromComparison(left, right ast.Expr) (string, bool) {
+	// Check if left side is 'username' identifier
+	if left.Kind() != ast.IdentKind {
+		return "", false
+	}
+	ident := left.AsIdent()
+	if ident != "username" {
+		return "", false
+	}
+
+	// Right side should be a constant string
+	if right.Kind() != ast.LiteralKind {
+		return "", false
+	}
+	literal := right.AsLiteral()
+
+	// literal is a ref.Val, we need to get the Go value
+	str, ok := literal.Value().(string)
+	if !ok || str == "" {
+		return "", false
+	}
+
+	return str, true
+}
+
+// ListUserNotifications lists all notifications for a user.
+// Notifications are backed by the inbox storage layer and represent activities
+// that require user attention (e.g., memo comments).
+func (s *APIV1Service) ListUserNotifications(ctx context.Context, request *v1pb.ListUserNotificationsRequest) (*v1pb.ListUserNotificationsResponse, error) {
+	userID, err := ExtractUserIDFromName(request.Parent)
+	if err != nil {
+		return nil, status.Errorf(codes.InvalidArgument, "invalid user name: %v", err)
+	}
+
+	// Verify the requesting user has permission to view these notifications
+	currentUser, err := s.fetchCurrentUser(ctx)
+	if err != nil {
+		return nil, status.Errorf(codes.Internal, "failed to get current user: %v", err)
+	}
+	if currentUser == nil {
+		return nil, status.Errorf(codes.Unauthenticated, "user not authenticated")
+	}
+	if currentUser.ID != userID {
+		return nil, status.Errorf(codes.PermissionDenied, "permission denied")
+	}
+
+	// Fetch inbox items from storage
+	// Filter at database level to only include MEMO_COMMENT notifications (ignore legacy VERSION_UPDATE entries)
+	memoCommentType := storepb.InboxMessage_MEMO_COMMENT
+	inboxes, err := s.Store.ListInboxes(ctx, &store.FindInbox{
+		ReceiverID:  &userID,
+		MessageType: &memoCommentType,
+	})
+	if err != nil {
+		return nil, status.Errorf(codes.Internal, "failed to list inboxes: %v", err)
+	}
+
+	// Convert storage layer inboxes to API notifications
+	notifications := []*v1pb.UserNotification{}
+	for _, inbox := range inboxes {
+		notification, err := s.convertInboxToUserNotification(ctx, inbox)
+		if err != nil {
+			return nil, status.Errorf(codes.Internal, "failed to convert inbox: %v", err)
+		}
+		notifications = append(notifications, notification)
+	}
+
+	return &v1pb.ListUserNotificationsResponse{
+		Notifications: notifications,
+	}, nil
+}
+
+// UpdateUserNotification updates a notification's status (e.g., marking as read/archived).
+// Only the notification owner can update their notifications.
+func (s *APIV1Service) UpdateUserNotification(ctx context.Context, request *v1pb.UpdateUserNotificationRequest) (*v1pb.UserNotification, error) {
+	if request.Notification == nil {
+		return nil, status.Errorf(codes.InvalidArgument, "notification is required")
+	}
+
+	notificationID, err := ExtractNotificationIDFromName(request.Notification.Name)
+	if err != nil {
+		return nil, status.Errorf(codes.InvalidArgument, "invalid notification name: %v", err)
+	}
+
+	currentUser, err := s.fetchCurrentUser(ctx)
+	if err != nil {
+		return nil, status.Errorf(codes.Internal, "failed to get current user: %v", err)
+	}
+
+	if currentUser == nil {
+		return nil, status.Errorf(codes.Unauthenticated, "user not authenticated")
+	}
+	// Verify ownership before updating
+	inboxes, err := s.Store.ListInboxes(ctx, &store.FindInbox{
+		ID: &notificationID,
+	})
+	if err != nil {
+		return nil, status.Errorf(codes.Internal, "failed to get inbox: %v", err)
+	}
+	if len(inboxes) == 0 {
+		return nil, status.Errorf(codes.NotFound, "notification not found")
+	}
+	inbox := inboxes[0]
+	if inbox.ReceiverID != currentUser.ID {
+		return nil, status.Errorf(codes.PermissionDenied, "permission denied")
+	}
+
+	// Build update request based on field mask
+	update := &store.UpdateInbox{
+		ID: notificationID,
+	}
+
+	for _, path := range request.UpdateMask.Paths {
+		switch path {
+		case "status":
+			// Convert API status enum to storage enum
+			var inboxStatus store.InboxStatus
+			switch request.Notification.Status {
+			case v1pb.UserNotification_UNREAD:
+				inboxStatus = store.UNREAD
+			case v1pb.UserNotification_ARCHIVED:
+				inboxStatus = store.ARCHIVED
+			default:
+				return nil, status.Errorf(codes.InvalidArgument, "invalid status")
+			}
+			update.Status = inboxStatus
+		default:
+			return nil, status.Errorf(codes.InvalidArgument, "invalid update path: %s", path)
+		}
+	}
+
+	updatedInbox, err := s.Store.UpdateInbox(ctx, update)
+	if err != nil {
+		return nil, status.Errorf(codes.Internal, "failed to update inbox: %v", err)
+	}
+
+	notification, err := s.convertInboxToUserNotification(ctx, updatedInbox)
+	if err != nil {
+		return nil, status.Errorf(codes.Internal, "failed to convert inbox: %v", err)
+	}
+
+	return notification, nil
+}
+
+// DeleteUserNotification permanently deletes a notification.
+// Only the notification owner can delete their notifications.
+func (s *APIV1Service) DeleteUserNotification(ctx context.Context, request *v1pb.DeleteUserNotificationRequest) (*emptypb.Empty, error) {
+	notificationID, err := ExtractNotificationIDFromName(request.Name)
+	if err != nil {
+		return nil, status.Errorf(codes.InvalidArgument, "invalid notification name: %v", err)
+	}
+
+	currentUser, err := s.fetchCurrentUser(ctx)
+	if err != nil {
+		return nil, status.Errorf(codes.Internal, "failed to get current user: %v", err)
+	}
+
+	if currentUser == nil {
+		return nil, status.Errorf(codes.Unauthenticated, "user not authenticated")
+	}
+	// Verify ownership before deletion
+	inboxes, err := s.Store.ListInboxes(ctx, &store.FindInbox{
+		ID: &notificationID,
+	})
+	if err != nil {
+		return nil, status.Errorf(codes.Internal, "failed to get inbox: %v", err)
+	}
+	if len(inboxes) == 0 {
+		return nil, status.Errorf(codes.NotFound, "notification not found")
+	}
+	inbox := inboxes[0]
+	if inbox.ReceiverID != currentUser.ID {
+		return nil, status.Errorf(codes.PermissionDenied, "permission denied")
+	}
+
+	if err := s.Store.DeleteInbox(ctx, &store.DeleteInbox{
+		ID: notificationID,
+	}); err != nil {
+		return nil, status.Errorf(codes.Internal, "failed to delete inbox: %v", err)
+	}
+
+	return &emptypb.Empty{}, nil
+}
+
+// convertInboxToUserNotification converts a storage-layer inbox to an API notification.
+// This handles the mapping between the internal inbox representation and the public API.
+func (*APIV1Service) convertInboxToUserNotification(_ context.Context, inbox *store.Inbox) (*v1pb.UserNotification, error) {
+	notification := &v1pb.UserNotification{
+		Name:       fmt.Sprintf("users/%d/notifications/%d", inbox.ReceiverID, inbox.ID),
+		Sender:     fmt.Sprintf("%s%d", UserNamePrefix, inbox.SenderID),
+		CreateTime: timestamppb.New(time.Unix(inbox.CreatedTs, 0)),
+	}
+
+	// Convert status from storage enum to API enum
+	switch inbox.Status {
+	case store.UNREAD:
+		notification.Status = v1pb.UserNotification_UNREAD
+	case store.ARCHIVED:
+		notification.Status = v1pb.UserNotification_ARCHIVED
 	default:
-		// Default to SQLite for unknown drivers
-		dialect = &filter.SQLiteDialect{}
+		notification.Status = v1pb.UserNotification_STATUS_UNSPECIFIED
 	}
 
-	converter := filter.NewCommonSQLConverter(dialect)
-	err = converter.ConvertExprToSQL(convertCtx, parsedExpr.GetExpr())
-	if err != nil {
-		return errors.Wrap(err, "failed to convert filter to SQL")
+	// Extract notification type and activity ID from inbox message
+	if inbox.Message != nil {
+		switch inbox.Message.Type {
+		case storepb.InboxMessage_MEMO_COMMENT:
+			notification.Type = v1pb.UserNotification_MEMO_COMMENT
+		default:
+			notification.Type = v1pb.UserNotification_TYPE_UNSPECIFIED
+		}
+
+		if inbox.Message.ActivityId != nil {
+			notification.ActivityId = inbox.Message.ActivityId
+		}
 	}
-	return nil
+
+	return notification, nil
+}
+
+// ExtractNotificationIDFromName extracts the notification ID from a resource name.
+// Expected format: users/{user_id}/notifications/{notification_id}.
+func ExtractNotificationIDFromName(name string) (int32, error) {
+	pattern := regexp.MustCompile(`^users/(\d+)/notifications/(\d+)$`)
+	matches := pattern.FindStringSubmatch(name)
+	if len(matches) != 3 {
+		return 0, errors.Errorf("invalid notification name: %s", name)
+	}
+
+	id, err := strconv.Atoi(matches[2])
+	if err != nil {
+		return 0, errors.Errorf("invalid notification id: %s", matches[2])
+	}
+
+	return int32(id), nil
 }
 
 // ListUserTags returns a list of tags used by a specific user.
@@ -1387,7 +1452,7 @@ func (s *APIV1Service) ListUserTags(ctx context.Context, request *v1pb.ListUserT
 	}
 
 	// Get current user for permission checking
-	currentUser, err := s.GetCurrentUser(ctx)
+	currentUser, err := s.fetchCurrentUser(ctx)
 	if err != nil {
 		return nil, status.Errorf(codes.Internal, "failed to get user: %v", err)
 	}

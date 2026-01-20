@@ -251,21 +251,6 @@
       "title": "Tokens d'accés",
       "token": "Token"
     },
-    "user-sessions-section": {
-      "title": "Sessions actives",
-      "description": "Llista de totes les sessions actives del teu compte. Les sessions caduquen automàticament dues setmanes després de l'última activitat. Pots revocar qualsevol sessió excepte la sessió actual.",
-      "device": "Dispositiu",
-      "location": "Ubicació",
-      "last-active": "Última activitat",
-      "expires": "Caduca",
-      "current": "Actual",
-      "never": "Mai",
-      "session-revocation": "Estàs segur que vols revocar la sessió {{sessionId}}? Hauràs d'iniciar sessió de nou en aquest dispositiu.",
-      "session-revoked": "Sessió revocada correctament",
-      "revoke-session": "Revoca la sessió",
-      "cannot-revoke-current": "No es pot revocar la sessió actual",
-      "no-sessions": "No s'han trobat sessions actives"
-    },
     "account-section": {
       "change-password": "Canvia la contrasenya",
       "email-note": "Opcional",
@@ -294,7 +279,6 @@
     "memo-related-settings": {
       "content-lenght-limit": "Límit de longitud del contingut (Bytes)",
       "enable-blur-nsfw-content": "Habilita el difuminat de contingut sensible (NSFW)",
-      "enable-link-preview": "Habilita la previsualització d'enllaços",
       "enable-memo-comments": "Habilita els comentaris a les notes",
       "enable-memo-location": "Habilita la ubicació de la nota",
       "reactions": "Reaccions",
@@ -380,7 +364,6 @@
         "locale": "Llengua del servidor",
         "title": "Personalitza el servidor"
       },
-      "disable-markdown-shortcuts-in-editor": "Desactiva dreceres Markdown a l'editor",
       "disable-password-login": "Desactiva l'inici de sessió amb contrasenya",
       "disable-password-login-final-warning": "Escriu \"CONFIRM\" si saps el que estàs fent.",
       "disable-password-login-warning": "Això desactivarà l'inici de sessió amb contrasenya per a tots els usuaris. No serà possible iniciar sessió sense revertir aquesta configuració a la base de dades si els proveïdors d'identitat fallen. Vés amb compte en eliminar un proveïdor d'identitat",
@@ -410,7 +393,7 @@
       "title": "Webhooks",
       "url": "URL"
     },
-    "workspace-section": {
+    "instance-section": {
       "disallow-change-nickname": "No permetis canviar el sobrenom",
       "disallow-change-username": "No permetis canviar el nom d'usuari",
       "disallow-password-auth": "No permetis autenticació per contrasenya",

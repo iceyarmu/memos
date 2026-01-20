@@ -1,40 +1,43 @@
 import copy from "copy-to-clipboard";
 import hljs from "highlight.js";
-import { CopyIcon } from "lucide-react";
-import { useEffect, useMemo } from "react";
-import toast from "react-hot-toast";
+import { CheckIcon, CopyIcon } from "lucide-react";
+import { useEffect, useMemo, useState } from "react";
+import { useAuth } from "@/contexts/AuthContext";
 import { cn } from "@/lib/utils";
-import MermaidBlock from "./MermaidBlock";
-import { BaseProps } from "./types";
+import { getThemeWithFallback, resolveTheme } from "@/utils/theme";
+import { MermaidBlock } from "./MermaidBlock";
+import { extractCodeContent, extractLanguage } from "./utils";
 
-// Special languages that are rendered differently.
-enum SpecialLanguage {
-  HTML = "__html",
-  MERMAID = "mermaid",
+interface CodeBlockProps {
+  children?: React.ReactNode;
+  className?: string;
 }
 
-interface Props extends BaseProps {
-  language: string;
-  content: string;
-}
+export const CodeBlock = ({ children, className, ...props }: CodeBlockProps) => {
+  const { userGeneralSetting } = useAuth();
+  const [copied, setCopied] = useState(false);
 
-const CodeBlock: React.FC<Props> = ({ language, content }: Props) => {
-  const formatedLanguage = useMemo(() => (language || "").toLowerCase() || "text", [language]);
+  const codeElement = children as React.ReactElement;
+  const codeClassName = codeElement?.props?.className || "";
+  const codeContent = extractCodeContent(children);
+  const language = extractLanguage(codeClassName);
 
-  // Users can set Markdown code blocks as `__html` to render HTML directly.
-  if (formatedLanguage === SpecialLanguage.HTML) {
+  // If it's a mermaid block, render with MermaidBlock component
+  if (language === "mermaid") {
     return (
-      <div
-        className="w-full overflow-auto my-2!"
-        dangerouslySetInnerHTML={{
-          __html: content,
-        }}
-      />
+      <pre className="relative">
+        <MermaidBlock className={cn(className)} {...props}>
+          {children}
+        </MermaidBlock>
+      </pre>
     );
-  } else if (formatedLanguage === SpecialLanguage.MERMAID) {
-    return <MermaidBlock content={content} />;
   }
 
+  const theme = getThemeWithFallback(userGeneralSetting?.theme);
+  const resolvedTheme = resolveTheme(theme);
+  const isDarkTheme = resolvedTheme.includes("dark");
+
+  // Dynamically load highlight.js theme based on app theme
   useEffect(() => {
     const dynamicImportStyle = async () => {
       // Remove any existing highlight.js style
@@ -44,13 +47,14 @@ const CodeBlock: React.FC<Props> = ({ language, content }: Props) => {
       }
 
       try {
-        // Always use the github light theme
-        const cssModule = await import("highlight.js/styles/github.css?inline");
+        const cssModule = isDarkTheme
+          ? await import("highlight.js/styles/github-dark-dimmed.css?inline")
+          : await import("highlight.js/styles/github.css?inline");
 
         // Create and inject the style
         const style = document.createElement("style");
         style.textContent = cssModule.default;
-        style.setAttribute("data-hljs-theme", "light");
+        style.setAttribute("data-hljs-theme", isDarkTheme ? "dark" : "light");
         document.head.appendChild(style);
       } catch (error) {
         console.warn("Failed to load highlight.js theme:", error);
@@ -58,14 +62,15 @@ const CodeBlock: React.FC<Props> = ({ language, content }: Props) => {
     };
 
     dynamicImportStyle();
-  }, []);
+  }, [resolvedTheme, isDarkTheme]);
 
+  // Highlight code using highlight.js
   const highlightedCode = useMemo(() => {
     try {
-      const lang = hljs.getLanguage(formatedLanguage);
+      const lang = hljs.getLanguage(language);
       if (lang) {
-        return hljs.highlight(content, {
-          language: formatedLanguage,
+        return hljs.highlight(codeContent, {
+          language: language,
         }).value;
       }
     } catch {
@@ -74,32 +79,56 @@ const CodeBlock: React.FC<Props> = ({ language, content }: Props) => {
 
     // Escape any HTML entities when rendering original content.
     return Object.assign(document.createElement("span"), {
-      textContent: content,
+      textContent: codeContent,
     }).innerHTML;
-  }, [formatedLanguage, content]);
+  }, [language, codeContent]);
 
-  const copyContent = () => {
-    copy(content);
-    toast.success("Copied to clipboard!");
+  const handleCopy = async () => {
+    try {
+      // Try native clipboard API first (requires HTTPS or localhost)
+      if (navigator.clipboard && window.isSecureContext) {
+        await navigator.clipboard.writeText(codeContent);
+        setCopied(true);
+        setTimeout(() => setCopied(false), 2000);
+      } else {
+        // Fallback to copy-to-clipboard library for non-secure contexts
+        const success = copy(codeContent);
+        if (success) {
+          setCopied(true);
+          setTimeout(() => setCopied(false), 2000);
+        } else {
+          console.error("Failed to copy code");
+        }
+      }
+    } catch (err) {
+      // If native API fails, try fallback
+      console.warn("Native clipboard failed, using fallback:", err);
+      const success = copy(codeContent);
+      if (success) {
+        setCopied(true);
+        setTimeout(() => setCopied(false), 2000);
+      } else {
+        console.error("Failed to copy code:", err);
+      }
+    }
   };
 
   return (
-    <div className="w-full my-1 bg-card border border-border rounded-md relative">
-      <div className="w-full px-2 py-0.5 flex flex-row justify-between items-center text-muted-foreground">
-        <span className="text-xs font-mono">{formatedLanguage}</span>
-        <CopyIcon className="w-3 h-auto cursor-pointer hover:text-foreground" onClick={copyContent} />
+    <pre className="relative">
+      <div className="absolute right-2 leading-3 top-1.5 flex flex-row justify-end items-center gap-1 opacity-60 hover:opacity-80">
+        <span className="text-[10px] font-medium text-muted-foreground/60 uppercase tracking-wider select-none">{language}</span>
+        <button
+          onClick={handleCopy}
+          className={cn("rounded-md transition-all", "hover:bg-accent/50", copied ? "text-primary" : "text-muted-foreground")}
+          aria-label={copied ? "Copied" : "Copy code"}
+          title={copied ? "Copied!" : "Copy code"}
+        >
+          {copied ? <CheckIcon className="w-3 h-3" /> : <CopyIcon className="w-3 h-3" />}
+        </button>
       </div>
-
-      <div className="overflow-auto">
-        <pre className={cn("no-wrap overflow-auto", "w-full p-2 bg-muted/50 relative")}>
-          <code
-            className={cn(`language-${formatedLanguage}`, "block text-sm leading-5 text-foreground")}
-            dangerouslySetInnerHTML={{ __html: highlightedCode }}
-          ></code>
-        </pre>
+      <div className={className} {...props}>
+        <code className={`language-${language}`} dangerouslySetInnerHTML={{ __html: highlightedCode }} />
       </div>
-    </div>
+    </pre>
   );
 };
-
-export default CodeBlock;

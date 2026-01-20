@@ -1,3 +1,5 @@
+import { create } from "@bufbuild/protobuf";
+import { FieldMaskSchema } from "@bufbuild/protobuf/wkt";
 import { useEffect, useState } from "react";
 import { toast } from "react-hot-toast";
 import { Button } from "@/components/ui/button";
@@ -5,96 +7,118 @@ import { Dialog, DialogContent, DialogFooter, DialogHeader, DialogTitle } from "
 import { Input } from "@/components/ui/input";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Separator } from "@/components/ui/separator";
-import { identityProviderServiceClient } from "@/grpcweb";
+import { identityProviderServiceClient } from "@/connect";
 import { absolutifyLink } from "@/helpers/utils";
-import { FieldMapping, IdentityProvider, IdentityProvider_Type, OAuth2Config } from "@/types/proto/api/v1/idp_service";
+import { handleError } from "@/lib/error";
+import {
+  FieldMapping,
+  FieldMappingSchema,
+  IdentityProvider,
+  IdentityProvider_Type,
+  IdentityProviderConfigSchema,
+  IdentityProviderSchema,
+  OAuth2Config,
+  OAuth2ConfigSchema,
+} from "@/types/proto/api/v1/idp_service_pb";
 import { useTranslate } from "@/utils/i18n";
 
 const templateList: IdentityProvider[] = [
-  {
+  create(IdentityProviderSchema, {
     name: "",
     title: "GitHub",
     type: IdentityProvider_Type.OAUTH2,
     identifierFilter: "",
-    config: {
-      oauth2Config: {
-        clientId: "",
-        clientSecret: "",
-        authUrl: "https://github.com/login/oauth/authorize",
-        tokenUrl: "https://github.com/login/oauth/access_token",
-        userInfoUrl: "https://api.github.com/user",
-        scopes: ["read:user"],
-        fieldMapping: FieldMapping.fromPartial({
-          identifier: "login",
-          displayName: "name",
-          email: "email",
+    config: create(IdentityProviderConfigSchema, {
+      config: {
+        case: "oauth2Config",
+        value: create(OAuth2ConfigSchema, {
+          clientId: "",
+          clientSecret: "",
+          authUrl: "https://github.com/login/oauth/authorize",
+          tokenUrl: "https://github.com/login/oauth/access_token",
+          userInfoUrl: "https://api.github.com/user",
+          scopes: ["read:user"],
+          fieldMapping: create(FieldMappingSchema, {
+            identifier: "login",
+            displayName: "name",
+            email: "email",
+          }),
         }),
       },
-    },
-  },
-  {
+    }),
+  }),
+  create(IdentityProviderSchema, {
     name: "",
     title: "GitLab",
     type: IdentityProvider_Type.OAUTH2,
     identifierFilter: "",
-    config: {
-      oauth2Config: {
-        clientId: "",
-        clientSecret: "",
-        authUrl: "https://gitlab.com/oauth/authorize",
-        tokenUrl: "https://gitlab.com/oauth/token",
-        userInfoUrl: "https://gitlab.com/oauth/userinfo",
-        scopes: ["openid"],
-        fieldMapping: FieldMapping.fromPartial({
-          identifier: "name",
-          displayName: "name",
-          email: "email",
+    config: create(IdentityProviderConfigSchema, {
+      config: {
+        case: "oauth2Config",
+        value: create(OAuth2ConfigSchema, {
+          clientId: "",
+          clientSecret: "",
+          authUrl: "https://gitlab.com/oauth/authorize",
+          tokenUrl: "https://gitlab.com/oauth/token",
+          userInfoUrl: "https://gitlab.com/oauth/userinfo",
+          scopes: ["openid"],
+          fieldMapping: create(FieldMappingSchema, {
+            identifier: "name",
+            displayName: "name",
+            email: "email",
+          }),
         }),
       },
-    },
-  },
-  {
+    }),
+  }),
+  create(IdentityProviderSchema, {
     name: "",
     title: "Google",
     type: IdentityProvider_Type.OAUTH2,
     identifierFilter: "",
-    config: {
-      oauth2Config: {
-        clientId: "",
-        clientSecret: "",
-        authUrl: "https://accounts.google.com/o/oauth2/v2/auth",
-        tokenUrl: "https://oauth2.googleapis.com/token",
-        userInfoUrl: "https://www.googleapis.com/oauth2/v2/userinfo",
-        scopes: ["https://www.googleapis.com/auth/userinfo.email", "https://www.googleapis.com/auth/userinfo.profile"],
-        fieldMapping: FieldMapping.fromPartial({
-          identifier: "email",
-          displayName: "name",
-          email: "email",
+    config: create(IdentityProviderConfigSchema, {
+      config: {
+        case: "oauth2Config",
+        value: create(OAuth2ConfigSchema, {
+          clientId: "",
+          clientSecret: "",
+          authUrl: "https://accounts.google.com/o/oauth2/v2/auth",
+          tokenUrl: "https://oauth2.googleapis.com/token",
+          userInfoUrl: "https://www.googleapis.com/oauth2/v2/userinfo",
+          scopes: ["https://www.googleapis.com/auth/userinfo.email", "https://www.googleapis.com/auth/userinfo.profile"],
+          fieldMapping: create(FieldMappingSchema, {
+            identifier: "email",
+            displayName: "name",
+            email: "email",
+          }),
         }),
       },
-    },
-  },
-  {
+    }),
+  }),
+  create(IdentityProviderSchema, {
     name: "",
     title: "Custom",
     type: IdentityProvider_Type.OAUTH2,
     identifierFilter: "",
-    config: {
-      oauth2Config: {
-        clientId: "",
-        clientSecret: "",
-        authUrl: "",
-        tokenUrl: "",
-        userInfoUrl: "",
-        scopes: [],
-        fieldMapping: FieldMapping.fromPartial({
-          identifier: "",
-          displayName: "",
-          email: "",
+    config: create(IdentityProviderConfigSchema, {
+      config: {
+        case: "oauth2Config",
+        value: create(OAuth2ConfigSchema, {
+          clientId: "",
+          clientSecret: "",
+          authUrl: "",
+          tokenUrl: "",
+          userInfoUrl: "",
+          scopes: [],
+          fieldMapping: create(FieldMappingSchema, {
+            identifier: "",
+            displayName: "",
+            email: "",
+          }),
         }),
       },
-    },
-  },
+    }),
+  }),
 ];
 
 interface Props {
@@ -112,40 +136,73 @@ function CreateIdentityProviderDialog({ open, onOpenChange, identityProvider, on
     identifierFilter: "",
   });
   const [type, setType] = useState<IdentityProvider_Type>(IdentityProvider_Type.OAUTH2);
-  const [oauth2Config, setOAuth2Config] = useState<OAuth2Config>({
-    clientId: "",
-    clientSecret: "",
-    authUrl: "",
-    tokenUrl: "",
-    userInfoUrl: "",
-    scopes: [],
-    fieldMapping: FieldMapping.fromPartial({
-      identifier: "",
-      displayName: "",
-      email: "",
+  const [oauth2Config, setOAuth2Config] = useState<OAuth2Config>(
+    create(OAuth2ConfigSchema, {
+      clientId: "",
+      clientSecret: "",
+      authUrl: "",
+      tokenUrl: "",
+      userInfoUrl: "",
+      scopes: [],
+      fieldMapping: create(FieldMappingSchema, {
+        identifier: "",
+        displayName: "",
+        email: "",
+      }),
     }),
-  });
+  );
   const [oauth2Scopes, setOAuth2Scopes] = useState<string>("");
   const [selectedTemplate, setSelectedTemplate] = useState<string>("GitHub");
   const isCreating = identityProvider === undefined;
 
+  // Reset state when dialog is closed
   useEffect(() => {
-    if (identityProvider) {
+    if (!open) {
+      // Reset to default state when dialog is closed
+      setBasicInfo({
+        title: "",
+        identifierFilter: "",
+      });
+      setType(IdentityProvider_Type.OAUTH2);
+      setOAuth2Config(
+        create(OAuth2ConfigSchema, {
+          clientId: "",
+          clientSecret: "",
+          authUrl: "",
+          tokenUrl: "",
+          userInfoUrl: "",
+          scopes: [],
+          fieldMapping: create(FieldMappingSchema, {
+            identifier: "",
+            displayName: "",
+            email: "",
+          }),
+        }),
+      );
+      setOAuth2Scopes("");
+      setSelectedTemplate("GitHub");
+    }
+  }, [open]);
+
+  // Load existing identity provider data when editing
+  useEffect(() => {
+    if (open && identityProvider) {
       setBasicInfo({
         title: identityProvider.title,
         identifierFilter: identityProvider.identifierFilter,
       });
       setType(identityProvider.type);
-      if (identityProvider.type === IdentityProvider_Type.OAUTH2) {
-        const oauth2Config = OAuth2Config.fromPartial(identityProvider.config?.oauth2Config || {});
+      if (identityProvider.type === IdentityProvider_Type.OAUTH2 && identityProvider.config?.config?.case === "oauth2Config") {
+        const oauth2Config = create(OAuth2ConfigSchema, identityProvider.config.config.value || {});
         setOAuth2Config(oauth2Config);
         setOAuth2Scopes(oauth2Config.scopes.join(" "));
       }
     }
-  }, [identityProvider]);
+  }, [open, identityProvider]);
 
+  // Load template data when creating new IDP
   useEffect(() => {
-    if (!isCreating) {
+    if (!isCreating || !open) {
       return;
     }
 
@@ -156,13 +213,13 @@ function CreateIdentityProviderDialog({ open, onOpenChange, identityProvider, on
         identifierFilter: template.identifierFilter,
       });
       setType(template.type);
-      if (template.type === IdentityProvider_Type.OAUTH2) {
-        const oauth2Config = OAuth2Config.fromPartial(template.config?.oauth2Config || {});
+      if (template.type === IdentityProvider_Type.OAUTH2 && template.config?.config?.case === "oauth2Config") {
+        const oauth2Config = create(OAuth2ConfigSchema, template.config.config.value || {});
         setOAuth2Config(oauth2Config);
         setOAuth2Scopes(oauth2Config.scopes.join(" "));
       }
     }
-  }, [selectedTemplate]);
+  }, [selectedTemplate, isCreating, open]);
 
   const handleCloseBtnClick = () => {
     onOpenChange(false);
@@ -172,7 +229,7 @@ function CreateIdentityProviderDialog({ open, onOpenChange, identityProvider, on
     if (basicInfo.title === "") {
       return false;
     }
-    if (type === "OAUTH2") {
+    if (type === IdentityProvider_Type.OAUTH2) {
       if (
         oauth2Config.clientId === "" ||
         oauth2Config.authUrl === "" ||
@@ -197,38 +254,45 @@ function CreateIdentityProviderDialog({ open, onOpenChange, identityProvider, on
     try {
       if (isCreating) {
         await identityProviderServiceClient.createIdentityProvider({
-          identityProvider: {
+          identityProvider: create(IdentityProviderSchema, {
             ...basicInfo,
             type: type,
-            config: {
-              oauth2Config: {
-                ...oauth2Config,
-                scopes: oauth2Scopes.split(" "),
+            config: create(IdentityProviderConfigSchema, {
+              config: {
+                case: "oauth2Config",
+                value: {
+                  ...oauth2Config,
+                  scopes: oauth2Scopes.split(" "),
+                },
               },
-            },
-          },
+            }),
+          }),
         });
         toast.success(t("setting.sso-section.sso-created", { name: basicInfo.title }));
       } else {
         await identityProviderServiceClient.updateIdentityProvider({
-          identityProvider: {
+          identityProvider: create(IdentityProviderSchema, {
             ...basicInfo,
             name: identityProvider!.name,
             type: type,
-            config: {
-              oauth2Config: {
-                ...oauth2Config,
-                scopes: oauth2Scopes.split(" "),
+            config: create(IdentityProviderConfigSchema, {
+              config: {
+                case: "oauth2Config",
+                value: {
+                  ...oauth2Config,
+                  scopes: oauth2Scopes.split(" "),
+                },
               },
-            },
-          },
-          updateMask: ["title", "identifier_filter", "config"],
+            }),
+          }),
+          updateMask: create(FieldMaskSchema, { paths: ["title", "identifier_filter", "config"] }),
         });
         toast.success(t("setting.sso-section.sso-updated", { name: basicInfo.title }));
       }
-    } catch (error: any) {
-      toast.error(error.details);
-      console.error(error);
+    } catch (error: unknown) {
+      await handleError(error, toast.error, {
+        context: isCreating ? "Create identity provider" : "Update identity provider",
+      });
     }
     onSuccess?.();
     onOpenChange(false);
@@ -307,7 +371,7 @@ function CreateIdentityProviderDialog({ open, onOpenChange, identityProvider, on
             }
           />
           <Separator className="my-2" />
-          {type === "OAUTH2" && (
+          {type === IdentityProvider_Type.OAUTH2 && (
             <>
               {isCreating && (
                 <p className="border border-border rounded-md p-2 text-sm w-full mb-2 break-all">

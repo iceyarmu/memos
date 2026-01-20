@@ -2,117 +2,120 @@ package v1
 
 import (
 	"context"
-	"fmt"
-	"math"
+	"net/http"
 
+	"connectrpc.com/connect"
 	"github.com/grpc-ecosystem/grpc-gateway/v2/runtime"
-	"github.com/improbable-eng/grpc-web/go/grpcweb"
 	"github.com/labstack/echo/v4"
 	"github.com/labstack/echo/v4/middleware"
-	"google.golang.org/grpc"
-	"google.golang.org/grpc/credentials/insecure"
-	"google.golang.org/grpc/health/grpc_health_v1"
-	"google.golang.org/grpc/reflection"
+	"golang.org/x/sync/semaphore"
 
 	"github.com/usememos/memos/internal/profile"
+	"github.com/usememos/memos/plugin/markdown"
 	v1pb "github.com/usememos/memos/proto/gen/api/v1"
+	"github.com/usememos/memos/server/auth"
 	"github.com/usememos/memos/store"
 )
 
 type APIV1Service struct {
-	grpc_health_v1.UnimplementedHealthServer
-
-	v1pb.UnimplementedWorkspaceServiceServer
+	v1pb.UnimplementedInstanceServiceServer
 	v1pb.UnimplementedAuthServiceServer
 	v1pb.UnimplementedUserServiceServer
 	v1pb.UnimplementedMemoServiceServer
 	v1pb.UnimplementedAttachmentServiceServer
 	v1pb.UnimplementedShortcutServiceServer
-	v1pb.UnimplementedInboxServiceServer
 	v1pb.UnimplementedActivityServiceServer
-	v1pb.UnimplementedMarkdownServiceServer
 	v1pb.UnimplementedIdentityProviderServiceServer
 
-	Secret  string
-	Profile *profile.Profile
-	Store   *store.Store
+	Secret          string
+	Profile         *profile.Profile
+	Store           *store.Store
+	MarkdownService markdown.Service
 
-	grpcServer *grpc.Server
+	// thumbnailSemaphore limits concurrent thumbnail generation to prevent memory exhaustion
+	thumbnailSemaphore *semaphore.Weighted
 }
 
-func NewAPIV1Service(secret string, profile *profile.Profile, store *store.Store, grpcServer *grpc.Server) *APIV1Service {
-	grpc.EnableTracing = true
-	apiv1Service := &APIV1Service{
-		Secret:     secret,
-		Profile:    profile,
-		Store:      store,
-		grpcServer: grpcServer,
-	}
-	grpc_health_v1.RegisterHealthServer(grpcServer, apiv1Service)
-	v1pb.RegisterWorkspaceServiceServer(grpcServer, apiv1Service)
-	v1pb.RegisterAuthServiceServer(grpcServer, apiv1Service)
-	v1pb.RegisterUserServiceServer(grpcServer, apiv1Service)
-	v1pb.RegisterMemoServiceServer(grpcServer, apiv1Service)
-	v1pb.RegisterAttachmentServiceServer(grpcServer, apiv1Service)
-	v1pb.RegisterShortcutServiceServer(grpcServer, apiv1Service)
-	v1pb.RegisterInboxServiceServer(grpcServer, apiv1Service)
-	v1pb.RegisterActivityServiceServer(grpcServer, apiv1Service)
-	v1pb.RegisterMarkdownServiceServer(grpcServer, apiv1Service)
-	v1pb.RegisterIdentityProviderServiceServer(grpcServer, apiv1Service)
-	reflection.Register(grpcServer)
-	return apiv1Service
-}
-
-// RegisterGateway registers the gRPC-Gateway with the given Echo instance.
-func (s *APIV1Service) RegisterGateway(ctx context.Context, echoServer *echo.Echo) error {
-	var target string
-	if len(s.Profile.UNIXSock) == 0 {
-		addr := s.Profile.Addr
-		if addr == "" {
-			addr = "localhost"
-		}
-		target = fmt.Sprintf("%s:%d", addr, s.Profile.Port)
-	} else {
-		target = fmt.Sprintf("unix:%s", s.Profile.UNIXSock)
-	}
-	conn, err := grpc.NewClient(
-		target,
-		grpc.WithTransportCredentials(insecure.NewCredentials()),
-		grpc.WithDefaultCallOptions(grpc.MaxCallRecvMsgSize(math.MaxInt32)),
+func NewAPIV1Service(secret string, profile *profile.Profile, store *store.Store) *APIV1Service {
+	markdownService := markdown.NewService(
+		markdown.WithTagExtension(),
 	)
-	if err != nil {
-		return err
+	return &APIV1Service{
+		Secret:             secret,
+		Profile:            profile,
+		Store:              store,
+		MarkdownService:    markdownService,
+		thumbnailSemaphore: semaphore.NewWeighted(3), // Limit to 3 concurrent thumbnail generations
+	}
+}
+
+// RegisterGateway registers the gRPC-Gateway and Connect handlers with the given Echo instance.
+func (s *APIV1Service) RegisterGateway(ctx context.Context, echoServer *echo.Echo) error {
+	// Auth middleware for gRPC-Gateway - runs after routing, has access to method name.
+	// Uses the same PublicMethods config as the Connect AuthInterceptor.
+	authenticator := auth.NewAuthenticator(s.Store, s.Secret)
+	gatewayAuthMiddleware := func(next runtime.HandlerFunc) runtime.HandlerFunc {
+		return func(w http.ResponseWriter, r *http.Request, pathParams map[string]string) {
+			ctx := r.Context()
+
+			// Get the RPC method name from context (set by grpc-gateway after routing)
+			rpcMethod, ok := runtime.RPCMethod(ctx)
+
+			// Extract credentials from HTTP headers
+			authHeader := r.Header.Get("Authorization")
+
+			result := authenticator.Authenticate(ctx, authHeader)
+
+			// Enforce authentication for non-public methods
+			// If rpcMethod cannot be determined, allow through, service layer will handle visibility checks
+			if result == nil && ok && !IsPublicMethod(rpcMethod) {
+				http.Error(w, `{"code": 16, "message": "authentication required"}`, http.StatusUnauthorized)
+				return
+			}
+
+			// Set context based on auth result (may be nil for public endpoints)
+			if result != nil {
+				if result.Claims != nil {
+					// Access Token V2 - stateless, use claims
+					ctx = auth.SetUserClaimsInContext(ctx, result.Claims)
+					ctx = context.WithValue(ctx, auth.UserIDContextKey, result.Claims.UserID)
+				} else if result.User != nil {
+					// PAT - have full user
+					ctx = auth.SetUserInContext(ctx, result.User, result.AccessToken)
+				}
+				r = r.WithContext(ctx)
+			}
+
+			next(w, r, pathParams)
+		}
 	}
 
-	gwMux := runtime.NewServeMux()
-	if err := v1pb.RegisterWorkspaceServiceHandler(ctx, gwMux, conn); err != nil {
+	// Create gRPC-Gateway mux with auth middleware.
+	gwMux := runtime.NewServeMux(
+		runtime.WithMiddlewares(gatewayAuthMiddleware),
+	)
+	if err := v1pb.RegisterInstanceServiceHandlerServer(ctx, gwMux, s); err != nil {
 		return err
 	}
-	if err := v1pb.RegisterAuthServiceHandler(ctx, gwMux, conn); err != nil {
+	if err := v1pb.RegisterAuthServiceHandlerServer(ctx, gwMux, s); err != nil {
 		return err
 	}
-	if err := v1pb.RegisterUserServiceHandler(ctx, gwMux, conn); err != nil {
+	if err := v1pb.RegisterUserServiceHandlerServer(ctx, gwMux, s); err != nil {
 		return err
 	}
-	if err := v1pb.RegisterMemoServiceHandler(ctx, gwMux, conn); err != nil {
+	if err := v1pb.RegisterMemoServiceHandlerServer(ctx, gwMux, s); err != nil {
 		return err
 	}
-	if err := v1pb.RegisterAttachmentServiceHandler(ctx, gwMux, conn); err != nil {
+	if err := v1pb.RegisterAttachmentServiceHandlerServer(ctx, gwMux, s); err != nil {
 		return err
 	}
-	if err := v1pb.RegisterShortcutServiceHandler(ctx, gwMux, conn); err != nil {
+	if err := v1pb.RegisterShortcutServiceHandlerServer(ctx, gwMux, s); err != nil {
 		return err
 	}
-	if err := v1pb.RegisterInboxServiceHandler(ctx, gwMux, conn); err != nil {
+	if err := v1pb.RegisterActivityServiceHandlerServer(ctx, gwMux, s); err != nil {
 		return err
 	}
-	if err := v1pb.RegisterActivityServiceHandler(ctx, gwMux, conn); err != nil {
-		return err
-	}
-	if err := v1pb.RegisterMarkdownServiceHandler(ctx, gwMux, conn); err != nil {
-		return err
-	}
-	if err := v1pb.RegisterIdentityProviderServiceHandler(ctx, gwMux, conn); err != nil {
+	if err := v1pb.RegisterIdentityProviderServiceHandlerServer(ctx, gwMux, s); err != nil {
 		return err
 	}
 	gwGroup := echoServer.Group("")
@@ -122,15 +125,29 @@ func (s *APIV1Service) RegisterGateway(ctx context.Context, echoServer *echo.Ech
 	gwGroup.Any("/api/v1/*", handler)
 	gwGroup.Any("/file/*", handler)
 
-	// GRPC web proxy.
-	options := []grpcweb.Option{
-		grpcweb.WithCorsForRegisteredEndpointsOnly(false),
-		grpcweb.WithOriginFunc(func(_ string) bool {
-			return true
-		}),
-	}
-	wrappedGrpc := grpcweb.WrapServer(s.grpcServer, options...)
-	echoServer.Any("/memos.api.v1.*", echo.WrapHandler(wrappedGrpc))
+	// Connect handlers for browser clients (replaces grpc-web).
+	logStacktraces := s.Profile.IsDev()
+	connectInterceptors := connect.WithInterceptors(
+		NewMetadataInterceptor(), // Convert HTTP headers to gRPC metadata first
+		NewLoggingInterceptor(logStacktraces),
+		NewRecoveryInterceptor(logStacktraces),
+		NewAuthInterceptor(s.Store, s.Secret),
+	)
+	connectMux := http.NewServeMux()
+	connectHandler := NewConnectServiceHandler(s)
+	connectHandler.RegisterConnectHandlers(connectMux, connectInterceptors)
+
+	// Wrap with CORS for browser access
+	corsHandler := middleware.CORSWithConfig(middleware.CORSConfig{
+		AllowOriginFunc: func(_ string) (bool, error) {
+			return true, nil
+		},
+		AllowMethods:     []string{http.MethodGet, http.MethodPost, http.MethodOptions},
+		AllowHeaders:     []string{"*"},
+		AllowCredentials: true,
+	})
+	connectGroup := echoServer.Group("", corsHandler)
+	connectGroup.Any("/memos.api.v1.*", echo.WrapHandler(connectMux))
 
 	return nil
 }

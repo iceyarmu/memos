@@ -1,22 +1,21 @@
-import { observer } from "mobx-react-lite";
 import { useEffect, useState } from "react";
 import { useLocation } from "react-router-dom";
 import { Button } from "@/components/ui/button";
 import { Sheet, SheetContent, SheetHeader, SheetTitle, SheetTrigger } from "@/components/ui/sheet";
-import { workspaceStore } from "@/store";
+import { useInstance } from "@/contexts/InstanceContext";
 import Navigation from "./Navigation";
 import UserAvatar from "./UserAvatar";
 
-const NavigationDrawer = observer(() => {
+const NavigationDrawer = () => {
   const location = useLocation();
   const [open, setOpen] = useState(false);
-  const workspaceGeneralSetting = workspaceStore.state.generalSetting;
-  const title = workspaceGeneralSetting.customProfile?.title || "Memos";
-  const avatarUrl = workspaceGeneralSetting.customProfile?.logoUrl || "/full-logo.webp";
+  const { generalSetting } = useInstance();
+  const title = generalSetting.customProfile?.title || "Memos";
+  const avatarUrl = generalSetting.customProfile?.logoUrl || "/full-logo.webp";
 
   useEffect(() => {
     setOpen(false);
-  }, [location.pathname]);
+  }, [location.key]);
 
   return (
     <Sheet open={open} onOpenChange={setOpen}>
@@ -34,6 +33,6 @@ const NavigationDrawer = observer(() => {
       </SheetContent>
     </Sheet>
   );
-});
+};
 
 export default NavigationDrawer;

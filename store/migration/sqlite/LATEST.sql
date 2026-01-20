@@ -1,9 +1,3 @@
--- migration_history
-CREATE TABLE migration_history (
-  version TEXT NOT NULL PRIMARY KEY,
-  created_ts BIGINT NOT NULL DEFAULT (strftime('%s', 'now'))
-);
-
 -- system_setting
 CREATE TABLE system_setting (
   name TEXT NOT NULL,
@@ -27,8 +21,6 @@ CREATE TABLE user (
   description TEXT NOT NULL DEFAULT ''
 );
 
-CREATE INDEX idx_user_username ON user (username);
-
 -- user_setting
 CREATE TABLE user_setting (
   user_id INTEGER NOT NULL,
@@ -51,16 +43,6 @@ CREATE TABLE memo (
   payload TEXT NOT NULL DEFAULT '{}'
 );
 
-CREATE INDEX idx_memo_creator_id ON memo (creator_id);
-
--- memo_organizer
-CREATE TABLE memo_organizer (
-  memo_id INTEGER NOT NULL,
-  user_id INTEGER NOT NULL,
-  pinned INTEGER NOT NULL CHECK (pinned IN (0, 1)) DEFAULT 0,
-  UNIQUE(memo_id, user_id)
-);
-
 -- memo_relation
 CREATE TABLE memo_relation (
   memo_id INTEGER NOT NULL,
@@ -69,8 +51,8 @@ CREATE TABLE memo_relation (
   UNIQUE(memo_id, related_memo_id, type)
 );
 
--- resource
-CREATE TABLE resource (
+-- attachment
+CREATE TABLE attachment (
   id INTEGER PRIMARY KEY AUTOINCREMENT,
   uid TEXT NOT NULL UNIQUE,
   creator_id INTEGER NOT NULL,
@@ -85,10 +67,6 @@ CREATE TABLE resource (
   reference TEXT NOT NULL DEFAULT '',
   payload TEXT NOT NULL DEFAULT '{}'
 );
-
-CREATE INDEX idx_resource_creator_id ON resource (creator_id);
-
-CREATE INDEX idx_resource_memo_id ON resource (memo_id);
 
 -- activity
 CREATE TABLE activity (

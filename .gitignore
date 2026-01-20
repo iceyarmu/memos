@@ -4,8 +4,13 @@ tmp
 # Frontend asset
 web/dist
 
-# build folder
-build
+# Build artifacts
+build/
+bin/
+memos
+
+# Plan/design documents
+docs/plans/
 
 .DS_Store
 
@@ -19,3 +24,6 @@ dist
 
 # VSCode settings
 .vscode
+
+# Git worktrees
+.worktrees/

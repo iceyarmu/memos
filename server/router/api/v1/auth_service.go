@@ -10,7 +10,6 @@ import (
 
 	"github.com/pkg/errors"
 	"golang.org/x/crypto/bcrypt"
-	"google.golang.org/grpc"
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/metadata"
 	"google.golang.org/grpc/status"
@@ -22,6 +21,7 @@ import (
 	"github.com/usememos/memos/plugin/idp/oauth2"
 	v1pb "github.com/usememos/memos/proto/gen/api/v1"
 	storepb "github.com/usememos/memos/proto/gen/store"
+	"github.com/usememos/memos/server/auth"
 	"github.com/usememos/memos/store"
 )
 
@@ -29,8 +29,13 @@ const (
 	unmatchedUsernameAndPasswordError = "unmatched username and password"
 )
 
-func (s *APIV1Service) GetCurrentSession(ctx context.Context, _ *v1pb.GetCurrentSessionRequest) (*v1pb.GetCurrentSessionResponse, error) {
-	user, err := s.GetCurrentUser(ctx)
+// GetCurrentUser returns the authenticated user's information.
+// Validates the access token and returns user details.
+//
+// Authentication: Required (access token).
+// Returns: User information.
+func (s *APIV1Service) GetCurrentUser(ctx context.Context, _ *v1pb.GetCurrentUserRequest) (*v1pb.GetCurrentUserResponse, error) {
+	user, err := s.fetchCurrentUser(ctx)
 	if err != nil {
 		return nil, status.Errorf(codes.Unauthenticated, "failed to get current user: %v", err)
 	}
@@ -42,25 +47,24 @@ func (s *APIV1Service) GetCurrentSession(ctx context.Context, _ *v1pb.GetCurrent
 		return nil, status.Errorf(codes.Unauthenticated, "user not found")
 	}
 
-	var lastAccessedAt *timestamppb.Timestamp
-	// Update session last accessed time if we have a session ID and get the current session info
-	if sessionID, ok := ctx.Value(sessionIDContextKey).(string); ok && sessionID != "" {
-		now := timestamppb.Now()
-		if err := s.Store.UpdateUserSessionLastAccessed(ctx, user.ID, sessionID, now); err != nil {
-			// Log error but don't fail the request
-			slog.Error("failed to update session last accessed time", "error", err)
-		}
-		lastAccessedAt = now
-	}
-
-	return &v1pb.GetCurrentSessionResponse{
-		User:           convertUserFromStore(user),
-		LastAccessedAt: lastAccessedAt,
+	return &v1pb.GetCurrentUserResponse{
+		User: convertUserFromStore(user),
 	}, nil
 }
 
-func (s *APIV1Service) CreateSession(ctx context.Context, request *v1pb.CreateSessionRequest) (*v1pb.CreateSessionResponse, error) {
+// SignIn authenticates a user with credentials and returns tokens.
+// On success, returns an access token and sets a refresh token cookie.
+//
+// Supports two authentication methods:
+// 1. Password-based authentication (username + password).
+// 2. SSO authentication (OAuth2 authorization code).
+//
+// Authentication: Not required (public endpoint).
+// Returns: User info, access token, and token expiry.
+func (s *APIV1Service) SignIn(ctx context.Context, request *v1pb.SignInRequest) (*v1pb.SignInResponse, error) {
 	var existingUser *store.User
+
+	// Authentication Method 1: Password-based authentication
 	if passwordCredentials := request.GetPasswordCredentials(); passwordCredentials != nil {
 		user, err := s.Store.GetUser(ctx, &store.FindUser{
 			Username: &passwordCredentials.Username,
@@ -75,16 +79,17 @@ func (s *APIV1Service) CreateSession(ctx context.Context, request *v1pb.CreateSe
 		if err := bcrypt.CompareHashAndPassword([]byte(user.PasswordHash), []byte(passwordCredentials.Password)); err != nil {
 			return nil, status.Errorf(codes.InvalidArgument, unmatchedUsernameAndPasswordError)
 		}
-		workspaceGeneralSetting, err := s.Store.GetWorkspaceGeneralSetting(ctx)
+		instanceGeneralSetting, err := s.Store.GetInstanceGeneralSetting(ctx)
 		if err != nil {
-			return nil, status.Errorf(codes.Internal, "failed to get workspace general setting, error: %v", err)
+			return nil, status.Errorf(codes.Internal, "failed to get instance general setting, error: %v", err)
 		}
 		// Check if the password auth in is allowed.
-		if workspaceGeneralSetting.DisallowPasswordAuth && user.Role == store.RoleUser {
+		if instanceGeneralSetting.DisallowPasswordAuth && user.Role == store.RoleUser {
 			return nil, status.Errorf(codes.PermissionDenied, "password signin is not allowed")
 		}
 		existingUser = user
 	} else if ssoCredentials := request.GetSsoCredentials(); ssoCredentials != nil {
+		// Authentication Method 2: SSO (OAuth2) authentication
 		identityProvider, err := s.Store.GetIdentityProvider(ctx, &store.FindIdentityProvider{
 			ID: &ssoCredentials.IdpId,
 		})
@@ -101,7 +106,8 @@ func (s *APIV1Service) CreateSession(ctx context.Context, request *v1pb.CreateSe
 			if err != nil {
 				return nil, status.Errorf(codes.Internal, "failed to create oauth2 identity provider, error: %v", err)
 			}
-			token, err := oauth2IdentityProvider.ExchangeToken(ctx, ssoCredentials.RedirectUri, ssoCredentials.Code)
+			// Pass code_verifier for PKCE support (empty string if not provided for backward compatibility)
+			token, err := oauth2IdentityProvider.ExchangeToken(ctx, ssoCredentials.RedirectUri, ssoCredentials.Code, ssoCredentials.CodeVerifier)
 			if err != nil {
 				return nil, status.Errorf(codes.Internal, "failed to exchange token, error: %v", err)
 			}
@@ -130,11 +136,11 @@ func (s *APIV1Service) CreateSession(ctx context.Context, request *v1pb.CreateSe
 		}
 		if user == nil {
 			// Check if the user is allowed to sign up.
-			workspaceGeneralSetting, err := s.Store.GetWorkspaceGeneralSetting(ctx)
+			instanceGeneralSetting, err := s.Store.GetInstanceGeneralSetting(ctx)
 			if err != nil {
-				return nil, status.Errorf(codes.Internal, "failed to get workspace general setting, error: %v", err)
+				return nil, status.Errorf(codes.Internal, "failed to get instance general setting, error: %v", err)
 			}
-			if workspaceGeneralSetting.DisallowUserRegistration {
+			if instanceGeneralSetting.DisallowUserRegistration {
 				return nil, status.Errorf(codes.PermissionDenied, "user registration is not allowed")
 			}
 
@@ -171,119 +177,232 @@ func (s *APIV1Service) CreateSession(ctx context.Context, request *v1pb.CreateSe
 		return nil, status.Errorf(codes.PermissionDenied, "user has been archived with username %s", existingUser.Username)
 	}
 
-	// Default session expiration time is 100 year
-	expireTime := time.Now().Add(100 * 365 * 24 * time.Hour)
-	if err := s.doSignIn(ctx, existingUser, expireTime); err != nil {
-		return nil, status.Errorf(codes.Internal, "failed to sign in, error: %v", err)
+	accessToken, accessExpiresAt, err := s.doSignIn(ctx, existingUser)
+	if err != nil {
+		return nil, status.Errorf(codes.Internal, "failed to sign in: %v", err)
 	}
 
-	return &v1pb.CreateSessionResponse{
-		User:           convertUserFromStore(existingUser),
-		LastAccessedAt: timestamppb.Now(),
+	return &v1pb.SignInResponse{
+		User:                 convertUserFromStore(existingUser),
+		AccessToken:          accessToken,
+		AccessTokenExpiresAt: timestamppb.New(accessExpiresAt),
 	}, nil
 }
 
-func (s *APIV1Service) doSignIn(ctx context.Context, user *store.User, expireTime time.Time) error {
-	// Generate unique session ID for web use
-	sessionID, err := GenerateSessionID()
+// doSignIn performs the actual sign-in operation by creating a session and setting the cookie.
+//
+// This function:
+// 1. Generates refresh token and access token.
+// 2. Stores refresh token metadata in user_setting.
+// 3. Sets refresh token as HttpOnly cookie.
+// 4. Returns access token and its expiry time.
+func (s *APIV1Service) doSignIn(ctx context.Context, user *store.User) (string, time.Time, error) {
+	// Generate refresh token
+	tokenID := util.GenUUID()
+	refreshToken, refreshExpiresAt, err := auth.GenerateRefreshToken(user.ID, tokenID, []byte(s.Secret))
 	if err != nil {
-		return status.Errorf(codes.Internal, "failed to generate session ID, error: %v", err)
+		return "", time.Time{}, status.Errorf(codes.Internal, "failed to generate refresh token: %v", err)
 	}
 
-	// Track session in user settings
-	if err := s.trackUserSession(ctx, user.ID, sessionID); err != nil {
-		// Log the error but don't fail the login if session tracking fails
-		// This ensures backward compatibility
-		slog.Error("failed to track user session", "error", err)
+	// Store refresh token metadata
+	clientInfo := s.extractClientInfo(ctx)
+	refreshTokenRecord := &storepb.RefreshTokensUserSetting_RefreshToken{
+		TokenId:    tokenID,
+		ExpiresAt:  timestamppb.New(refreshExpiresAt),
+		CreatedAt:  timestamppb.Now(),
+		ClientInfo: clientInfo,
+	}
+	if err := s.Store.AddUserRefreshToken(ctx, user.ID, refreshTokenRecord); err != nil {
+		slog.Error("failed to store refresh token", "error", err)
 	}
 
-	// Set session cookie for web use (format: userID-sessionID)
-	sessionCookieValue := BuildSessionCookieValue(user.ID, sessionID)
-	sessionCookie, err := s.buildSessionCookie(ctx, sessionCookieValue, expireTime)
+	// Set refresh token cookie
+	refreshCookie := s.buildRefreshTokenCookie(ctx, refreshToken, refreshExpiresAt)
+	if err := SetResponseHeader(ctx, "Set-Cookie", refreshCookie); err != nil {
+		return "", time.Time{}, status.Errorf(codes.Internal, "failed to set refresh token cookie: %v", err)
+	}
+
+	// Generate access token
+	accessToken, accessExpiresAt, err := auth.GenerateAccessTokenV2(
+		user.ID,
+		user.Username,
+		string(user.Role),
+		string(user.RowStatus),
+		[]byte(s.Secret),
+	)
 	if err != nil {
-		return status.Errorf(codes.Internal, "failed to build session cookie, error: %v", err)
-	}
-	if err := grpc.SetHeader(ctx, metadata.New(map[string]string{
-		"Set-Cookie": sessionCookie,
-	})); err != nil {
-		return status.Errorf(codes.Internal, "failed to set grpc header, error: %v", err)
+		return "", time.Time{}, status.Errorf(codes.Internal, "failed to generate access token: %v", err)
 	}
 
-	return nil
+	return accessToken, accessExpiresAt, nil
 }
 
-func (s *APIV1Service) DeleteSession(ctx context.Context, _ *v1pb.DeleteSessionRequest) (*emptypb.Empty, error) {
-	user, err := s.GetCurrentUser(ctx)
-	if err != nil {
-		return nil, status.Errorf(codes.Unauthenticated, "failed to get current user: %v", err)
-	}
-	if user == nil {
-		return nil, status.Errorf(codes.Unauthenticated, "user not found")
-	}
-
-	// Check if we have a session ID (from cookie-based auth)
-	if sessionID, ok := ctx.Value(sessionIDContextKey).(string); ok && sessionID != "" {
-		// Remove session from user settings
-		if err := s.Store.RemoveUserSession(ctx, user.ID, sessionID); err != nil {
-			slog.Error("failed to remove user session", "error", err)
+// SignOut terminates the user's authentication.
+// Revokes the refresh token and clears the authentication cookie.
+//
+// Authentication: Required (access token).
+// Returns: Empty response on success.
+func (s *APIV1Service) SignOut(ctx context.Context, _ *v1pb.SignOutRequest) (*emptypb.Empty, error) {
+	// Get user from access token claims
+	claims := auth.GetUserClaims(ctx)
+	if claims != nil {
+		// Revoke refresh token if we can identify it
+		refreshToken := ""
+		if md, ok := metadata.FromIncomingContext(ctx); ok {
+			if cookies := md.Get("cookie"); len(cookies) > 0 {
+				refreshToken = auth.ExtractRefreshTokenFromCookie(cookies[0])
+			}
+		}
+		if refreshToken != "" {
+			refreshClaims, err := auth.ParseRefreshToken(refreshToken, []byte(s.Secret))
+			if err == nil {
+				// Remove refresh token from user_setting by token_id
+				_ = s.Store.RemoveUserRefreshToken(ctx, claims.UserID, refreshClaims.TokenID)
+			}
 		}
 	}
 
+	// Clear refresh token cookie
 	if err := s.clearAuthCookies(ctx); err != nil {
 		return nil, status.Errorf(codes.Internal, "failed to clear auth cookies, error: %v", err)
 	}
 	return &emptypb.Empty{}, nil
 }
 
-func (s *APIV1Service) clearAuthCookies(ctx context.Context) error {
-	// Clear session cookie
-	sessionCookie, err := s.buildSessionCookie(ctx, "", time.Time{})
-	if err != nil {
-		return errors.Wrap(err, "failed to build session cookie")
+// RefreshToken exchanges a valid refresh token for a new access token.
+//
+// This endpoint implements refresh token rotation with sliding window sessions:
+// 1. Extracts the refresh token from the HttpOnly cookie (memos_refresh)
+// 2. Validates the refresh token against the database (checking expiry and revocation)
+// 3. Rotates the refresh token: generates a new one with fresh 30-day expiry
+// 4. Generates a new short-lived access token (15 minutes)
+// 5. Sets the new refresh token as HttpOnly cookie
+// 6. Returns the new access token and its expiry time
+//
+// Token rotation provides:
+// - Sliding window sessions: active users stay logged in indefinitely
+// - Better security: stolen refresh tokens become invalid after legitimate refresh
+//
+// Authentication: Requires valid refresh token in cookie (public endpoint)
+// Returns: New access token and expiry timestamp.
+func (s *APIV1Service) RefreshToken(ctx context.Context, _ *v1pb.RefreshTokenRequest) (*v1pb.RefreshTokenResponse, error) {
+	// Extract refresh token from cookie
+	refreshToken := ""
+	if md, ok := metadata.FromIncomingContext(ctx); ok {
+		if cookies := md.Get("cookie"); len(cookies) > 0 {
+			refreshToken = auth.ExtractRefreshTokenFromCookie(cookies[0])
+		}
 	}
 
-	// Set both cookies in the response
-	if err := grpc.SetHeader(ctx, metadata.New(map[string]string{
-		"Set-Cookie": sessionCookie,
-	})); err != nil {
-		return errors.Wrap(err, "failed to set grpc header")
+	if refreshToken == "" {
+		return nil, status.Errorf(codes.Unauthenticated, "refresh token not found")
 	}
+
+	// Validate refresh token and get old token ID for rotation
+	authenticator := auth.NewAuthenticator(s.Store, s.Secret)
+	user, oldTokenID, err := authenticator.AuthenticateByRefreshToken(ctx, refreshToken)
+	if err != nil {
+		return nil, status.Errorf(codes.Unauthenticated, "invalid refresh token: %v", err)
+	}
+
+	// --- Refresh Token Rotation ---
+	// Generate new refresh token with fresh 30-day expiry (sliding window)
+	newTokenID := util.GenUUID()
+	newRefreshToken, newRefreshExpiresAt, err := auth.GenerateRefreshToken(user.ID, newTokenID, []byte(s.Secret))
+	if err != nil {
+		return nil, status.Errorf(codes.Internal, "failed to generate refresh token: %v", err)
+	}
+
+	// Store new refresh token (add before remove to handle race conditions)
+	clientInfo := s.extractClientInfo(ctx)
+	newRefreshTokenRecord := &storepb.RefreshTokensUserSetting_RefreshToken{
+		TokenId:    newTokenID,
+		ExpiresAt:  timestamppb.New(newRefreshExpiresAt),
+		CreatedAt:  timestamppb.Now(),
+		ClientInfo: clientInfo,
+	}
+	if err := s.Store.AddUserRefreshToken(ctx, user.ID, newRefreshTokenRecord); err != nil {
+		return nil, status.Errorf(codes.Internal, "failed to store refresh token: %v", err)
+	}
+
+	// Remove old refresh token
+	if err := s.Store.RemoveUserRefreshToken(ctx, user.ID, oldTokenID); err != nil {
+		// Log but don't fail - old token will expire naturally
+		slog.Warn("failed to remove old refresh token", "error", err, "userID", user.ID, "tokenID", oldTokenID)
+	}
+
+	// Set new refresh token cookie
+	newRefreshCookie := s.buildRefreshTokenCookie(ctx, newRefreshToken, newRefreshExpiresAt)
+	if err := SetResponseHeader(ctx, "Set-Cookie", newRefreshCookie); err != nil {
+		return nil, status.Errorf(codes.Internal, "failed to set refresh token cookie: %v", err)
+	}
+	// --- End Rotation ---
+
+	// Generate new access token
+	accessToken, expiresAt, err := auth.GenerateAccessTokenV2(
+		user.ID,
+		user.Username,
+		string(user.Role),
+		string(user.RowStatus),
+		[]byte(s.Secret),
+	)
+	if err != nil {
+		return nil, status.Errorf(codes.Internal, "failed to generate access token: %v", err)
+	}
+
+	return &v1pb.RefreshTokenResponse{
+		AccessToken: accessToken,
+		ExpiresAt:   timestamppb.New(expiresAt),
+	}, nil
+}
+
+func (s *APIV1Service) clearAuthCookies(ctx context.Context) error {
+	// Clear refresh token cookie
+	refreshCookie := s.buildRefreshTokenCookie(ctx, "", time.Time{})
+	if err := SetResponseHeader(ctx, "Set-Cookie", refreshCookie); err != nil {
+		return errors.Wrap(err, "failed to set refresh cookie")
+	}
+
 	return nil
 }
 
-func (*APIV1Service) buildSessionCookie(ctx context.Context, sessionCookieValue string, expireTime time.Time) (string, error) {
+func (*APIV1Service) buildRefreshTokenCookie(ctx context.Context, refreshToken string, expireTime time.Time) string {
 	attrs := []string{
-		fmt.Sprintf("%s=%s", SessionCookieName, sessionCookieValue),
+		fmt.Sprintf("%s=%s", auth.RefreshTokenCookieName, refreshToken),
 		"Path=/",
 		"HttpOnly",
 	}
 	if expireTime.IsZero() {
 		attrs = append(attrs, "Expires=Thu, 01 Jan 1970 00:00:00 GMT")
 	} else {
-		attrs = append(attrs, "Expires="+expireTime.Format(time.RFC1123))
+		// RFC 6265 requires cookie expiration dates to use GMT timezone
+		// Convert to UTC and format with explicit "GMT" to ensure browser compatibility
+		attrs = append(attrs, "Expires="+expireTime.UTC().Format("Mon, 02 Jan 2006 15:04:05 GMT"))
 	}
 
-	md, ok := metadata.FromIncomingContext(ctx)
-	if !ok {
-		return "", errors.New("failed to get metadata from context")
+	// Try to determine if the request is HTTPS by checking the origin header
+	// Default to non-HTTPS (Lax SameSite) if metadata is not available
+	isHTTPS := false
+	if md, ok := metadata.FromIncomingContext(ctx); ok {
+		for _, v := range md.Get("origin") {
+			if strings.HasPrefix(v, "https://") {
+				isHTTPS = true
+				break
+			}
+		}
 	}
-	var origin string
-	for _, v := range md.Get("origin") {
-		origin = v
-	}
-	isHTTPS := strings.HasPrefix(origin, "https://")
+
 	if isHTTPS {
-		attrs = append(attrs, "SameSite=None")
-		attrs = append(attrs, "Secure")
+		attrs = append(attrs, "SameSite=Lax", "Secure")
 	} else {
-		attrs = append(attrs, "SameSite=Strict")
+		attrs = append(attrs, "SameSite=Lax")
 	}
-	return strings.Join(attrs, "; "), nil
+	return strings.Join(attrs, "; ")
 }
 
-func (s *APIV1Service) GetCurrentUser(ctx context.Context) (*store.User, error) {
-	userID, ok := ctx.Value(userIDContextKey).(int32)
-	if !ok {
+func (s *APIV1Service) fetchCurrentUser(ctx context.Context) (*store.User, error) {
+	userID := auth.GetUserID(ctx)
+	if userID == 0 {
 		return nil, nil
 	}
 	user, err := s.Store.GetUser(ctx, &store.FindUser{
@@ -298,36 +417,21 @@ func (s *APIV1Service) GetCurrentUser(ctx context.Context) (*store.User, error) 
 	return user, nil
 }
 
-// Helper function to track user session for session management.
-func (s *APIV1Service) trackUserSession(ctx context.Context, userID int32, sessionID string) error {
-	// Extract client information from the context
-	clientInfo := s.extractClientInfo(ctx)
-
-	session := &storepb.SessionsUserSetting_Session{
-		SessionId:        sessionID,
-		CreateTime:       timestamppb.Now(),
-		LastAccessedTime: timestamppb.Now(),
-		ClientInfo:       clientInfo,
-	}
-
-	return s.Store.AddUserSession(ctx, userID, session)
-}
-
-// Helper function to extract client information from the gRPC context.
 // extractClientInfo extracts comprehensive client information from the request context.
-// This includes user agent parsing to determine device type, operating system, browser,
-// and IP address extraction. This information is used to provide detailed session
-// tracking and management capabilities in the web UI.
 //
-// Fields populated:
-// - UserAgent: Raw user agent string
-// - IpAddress: Client IP (from X-Forwarded-For or X-Real-IP headers)
-// - DeviceType: "mobile", "tablet", or "desktop"
-// - Os: Operating system name and version (e.g., "iOS 17.1", "Windows 10/11")
+// This function parses metadata from the gRPC context to extract:
+// - User Agent: Raw user agent string for detailed parsing
+// - IP Address: Client IP from X-Forwarded-For or X-Real-IP headers
+// - Device Type: "mobile", "tablet", or "desktop" (parsed from user agent)
+// - Operating System: OS name and version (e.g., "iOS 17.1", "Windows 10/11")
 // - Browser: Browser name and version (e.g., "Chrome 120.0.0.0")
-// - Country: Geographic location (TODO: implement with GeoIP service).
-func (s *APIV1Service) extractClientInfo(ctx context.Context) *storepb.SessionsUserSetting_ClientInfo {
-	clientInfo := &storepb.SessionsUserSetting_ClientInfo{}
+//
+// This information enables users to:
+// - See all active sessions with device details
+// - Identify suspicious login attempts
+// - Revoke specific sessions from unknown devices.
+func (s *APIV1Service) extractClientInfo(ctx context.Context) *storepb.RefreshTokensUserSetting_ClientInfo {
+	clientInfo := &storepb.RefreshTokensUserSetting_ClientInfo{}
 
 	// Extract user agent from metadata if available
 	if md, ok := metadata.FromIncomingContext(ctx); ok {
@@ -351,7 +455,15 @@ func (s *APIV1Service) extractClientInfo(ctx context.Context) *storepb.SessionsU
 }
 
 // parseUserAgent extracts device type, OS, and browser information from user agent string.
-func (*APIV1Service) parseUserAgent(userAgent string, clientInfo *storepb.SessionsUserSetting_ClientInfo) {
+//
+// Detection logic:
+// - Device Type: Checks for keywords like "mobile", "tablet", "ipad"
+// - OS: Pattern matches for iOS, Android, Windows, macOS, Linux, Chrome OS
+// - Browser: Identifies Edge, Chrome, Firefox, Safari, Opera
+//
+// Note: This is a simplified parser. For production use with high accuracy requirements,
+// consider using a dedicated user agent parsing library.
+func (*APIV1Service) parseUserAgent(userAgent string, clientInfo *storepb.RefreshTokensUserSetting_ClientInfo) {
 	if userAgent == "" {
 		return
 	}
@@ -359,14 +471,12 @@ func (*APIV1Service) parseUserAgent(userAgent string, clientInfo *storepb.Sessio
 	userAgent = strings.ToLower(userAgent)
 
 	// Detect device type
-	if strings.Contains(userAgent, "ipad") {
+	if strings.Contains(userAgent, "ipad") || strings.Contains(userAgent, "tablet") {
 		clientInfo.DeviceType = "tablet"
 	} else if strings.Contains(userAgent, "mobile") || strings.Contains(userAgent, "android") ||
 		strings.Contains(userAgent, "iphone") || strings.Contains(userAgent, "ipod") ||
 		strings.Contains(userAgent, "windows phone") || strings.Contains(userAgent, "blackberry") {
 		clientInfo.DeviceType = "mobile"
-	} else if strings.Contains(userAgent, "tablet") {
-		clientInfo.DeviceType = "tablet"
 	} else {
 		clientInfo.DeviceType = "desktop"
 	}

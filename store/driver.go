@@ -13,10 +13,6 @@ type Driver interface {
 
 	IsInitialized(ctx context.Context) (bool, error)
 
-	// MigrationHistory model related methods.
-	FindMigrationHistoryList(ctx context.Context, find *FindMigrationHistory) ([]*MigrationHistory, error)
-	UpsertMigrationHistory(ctx context.Context, upsert *UpsertMigrationHistory) (*MigrationHistory, error)
-
 	// Activity model related methods.
 	CreateActivity(ctx context.Context, create *Activity) (*Activity, error)
 	ListActivities(ctx context.Context, find *FindActivity) ([]*Activity, error)
@@ -38,10 +34,10 @@ type Driver interface {
 	ListMemoRelations(ctx context.Context, find *FindMemoRelation) ([]*MemoRelation, error)
 	DeleteMemoRelation(ctx context.Context, delete *DeleteMemoRelation) error
 
-	// WorkspaceSetting model related methods.
-	UpsertWorkspaceSetting(ctx context.Context, upsert *WorkspaceSetting) (*WorkspaceSetting, error)
-	ListWorkspaceSettings(ctx context.Context, find *FindWorkspaceSetting) ([]*WorkspaceSetting, error)
-	DeleteWorkspaceSetting(ctx context.Context, delete *DeleteWorkspaceSetting) error
+	// InstanceSetting model related methods.
+	UpsertInstanceSetting(ctx context.Context, upsert *InstanceSetting) (*InstanceSetting, error)
+	ListInstanceSettings(ctx context.Context, find *FindInstanceSetting) ([]*InstanceSetting, error)
+	DeleteInstanceSetting(ctx context.Context, delete *DeleteInstanceSetting) error
 
 	// User model related methods.
 	CreateUser(ctx context.Context, create *User) (*User, error)
@@ -52,6 +48,7 @@ type Driver interface {
 	// UserSetting model related methods.
 	UpsertUserSetting(ctx context.Context, upsert *UserSetting) (*UserSetting, error)
 	ListUserSettings(ctx context.Context, find *FindUserSetting) ([]*UserSetting, error)
+	GetUserByPATHash(ctx context.Context, tokenHash string) (*PATQueryResult, error)
 
 	// IdentityProvider model related methods.
 	CreateIdentityProvider(ctx context.Context, create *IdentityProvider) (*IdentityProvider, error)
@@ -68,5 +65,6 @@ type Driver interface {
 	// Reaction model related methods.
 	UpsertReaction(ctx context.Context, create *Reaction) (*Reaction, error)
 	ListReactions(ctx context.Context, find *FindReaction) ([]*Reaction, error)
+	GetReaction(ctx context.Context, find *FindReaction) (*Reaction, error)
 	DeleteReaction(ctx context.Context, delete *DeleteReaction) error
 }

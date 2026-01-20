@@ -251,21 +251,6 @@
       "title": "Tokens de acesso",
       "token": "Token"
     },
-    "user-sessions-section": {
-      "title": "Sessões ativas",
-      "description": "Uma lista de todas as sessões ativas da sua conta. As sessões expiram automaticamente 2 semanas após a última atividade. Você pode revogar qualquer sessão, exceto a atual.",
-      "device": "Dispositivo",
-      "location": "Localização",
-      "last-active": "Última atividade",
-      "expires": "Expira",
-      "current": "Atual",
-      "never": "Nunca",
-      "session-revocation": "Tem certeza de que deseja revogar a sessão {{sessionId}}? Você precisará entrar novamente nesse dispositivo.",
-      "session-revoked": "Sessão revogada com sucesso",
-      "revoke-session": "Revogar sessão",
-      "cannot-revoke-current": "Não é possível revogar a sessão atual",
-      "no-sessions": "Nenhuma sessão ativa encontrada"
-    },
     "account-section": {
       "change-password": "Alterar senha",
       "email-note": "Opcional",
@@ -294,7 +279,6 @@
     "memo-related-settings": {
       "content-lenght-limit": "Limite de tamanho do conteúdo (Bytes)",
       "enable-blur-nsfw-content": "Desfocar conteúdo impróprio (adicione as tags abaixo)",
-      "enable-link-preview": "Prévias de link",
       "enable-memo-comments": "Comentários nos memos",
       "enable-memo-location": "Marcador de localização",
       "reactions": "Reações",
@@ -380,7 +364,6 @@
         "locale": "Localização da instância",
         "title": "Personalizar instância"
       },
-      "disable-markdown-shortcuts-in-editor": "Desabilitar atalhos de Markdown no editor",
       "disable-password-login": "Desabilitar login com senha",
       "disable-password-login-final-warning": "Por favor, digite \"CONFIRM\" para prosseguir.",
       "disable-password-login-warning": "Isso desabilitará o login com senha para todos os usuários. Caso seus provedores de identidade (SSO) configurados falhem, não será possível fazer login sem reverter esse ajuste manualmente no banco de dados. Você também deverá tomar precauções adicionais ao remover qualquer provedor de identidade!",
@@ -410,7 +393,7 @@
       "title": "Webhooks",
       "url": "URL"
     },
-    "workspace-section": {
+    "instance-section": {
       "disallow-change-nickname": "Impedir troca de apelido",
       "disallow-change-username": "Impedir troca de nome de usuário",
       "disallow-password-auth": "Impedir autenticação por senha",
