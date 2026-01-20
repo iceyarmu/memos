@@ -10,25 +10,54 @@ interface Props {
   initialIndex?: number;
 }
 
+const MIN_SCALE = 0.1;
+const MAX_SCALE = 5;
+const SCALE_STEP = 0.25;
+
 function PreviewImageDialog({ open, onOpenChange, imgUrls, initialIndex = 0 }: Props) {
   const [currentIndex, setCurrentIndex] = useState(initialIndex);
+  const [scale, setScale] = useState(1);
 
-  // Update current index when initialIndex prop changes
+  const zoomIn = () => setScale((prev) => Math.min(prev + SCALE_STEP, MAX_SCALE));
+  const zoomOut = () => setScale((prev) => Math.max(prev - SCALE_STEP, MIN_SCALE));
+  const resetZoom = () => setScale(1);
+
+  // Update current index and reset zoom when initialIndex prop changes or dialog opens
   useEffect(() => {
-    setCurrentIndex(initialIndex);
-  }, [initialIndex]);
+    if (open) {
+      setCurrentIndex(initialIndex);
+      setScale(1);
+    }
+  }, [initialIndex, open]);
 
-  // Handle keyboard navigation
+  // Handle keyboard navigation and zoom
   useEffect(() => {
     const handleKeyDown = (event: KeyboardEvent) => {
       if (!open) return;
 
-      switch (event.key) {
-        case "Escape":
-          onOpenChange(false);
-          break;
-        default:
-          break;
+      const isMod = event.metaKey || event.ctrlKey;
+
+      if (event.key === "Escape") {
+        onOpenChange(false);
+        return;
+      }
+
+      if (isMod) {
+        switch (event.key) {
+          case "+":
+          case "=":
+            event.preventDefault();
+            zoomIn();
+            break;
+          case "-":
+            event.preventDefault();
+            zoomOut();
+            break;
+          case "0":
+            event.preventDefault();
+            resetZoom();
+            break;
+        }
       }
     };
 
@@ -76,7 +105,8 @@ function PreviewImageDialog({ open, onOpenChange, imgUrls, initialIndex = 0 }: P
           <img
             src={imgUrls[safeIndex]}
             alt={`Preview image ${safeIndex + 1} of ${imgUrls.length}`}
-            className="max-w-full max-h-full object-contain select-none"
+            className="max-w-full max-h-full object-contain select-none transition-transform"
+            style={{ transform: `scale(${scale})` }}
             draggable={false}
             loading="eager"
             decoding="async"
