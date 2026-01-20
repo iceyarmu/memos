@@ -1,5 +1,5 @@
 import { X } from "lucide-react";
-import React, { useEffect, useState } from "react";
+import { MouseEvent, useCallback, useEffect, useRef, useState } from "react";
 import { Button } from "@/components/ui/button";
 import { Dialog, DialogContent } from "@/components/ui/dialog";
 
@@ -17,10 +17,38 @@ const SCALE_STEP = 0.25;
 function PreviewImageDialog({ open, onOpenChange, imgUrls, initialIndex = 0 }: Props) {
   const [currentIndex, setCurrentIndex] = useState(initialIndex);
   const [scale, setScale] = useState(1);
+  const containerRef = useRef<HTMLDivElement | null>(null);
 
-  const zoomIn = () => setScale((prev) => Math.min(prev + SCALE_STEP, MAX_SCALE));
-  const zoomOut = () => setScale((prev) => Math.max(prev - SCALE_STEP, MIN_SCALE));
-  const resetZoom = () => setScale(1);
+  const zoomIn = useCallback(() => setScale((prev) => Math.min(prev + SCALE_STEP, MAX_SCALE)), []);
+  const zoomOut = useCallback(() => setScale((prev) => Math.max(prev - SCALE_STEP, MIN_SCALE)), []);
+  const resetZoom = useCallback(() => setScale(1), []);
+
+  // Callback ref to handle wheel zoom - ensures event listener is added when DOM mounts
+  const setContainerRef = useCallback(
+    (node: HTMLDivElement | null) => {
+      const handleWheel = (event: WheelEvent) => {
+        event.preventDefault();
+        if (event.deltaY < 0) {
+          zoomIn();
+        } else {
+          zoomOut();
+        }
+      };
+
+      // Clean up old node
+      if (containerRef.current) {
+        containerRef.current.removeEventListener("wheel", handleWheel);
+      }
+
+      containerRef.current = node;
+
+      // Bind to new node
+      if (node) {
+        node.addEventListener("wheel", handleWheel, { passive: false });
+      }
+    },
+    [zoomIn, zoomOut],
+  );
 
   // Update current index and reset zoom when initialIndex prop changes or dialog opens
   useEffect(() => {
@@ -63,13 +91,13 @@ function PreviewImageDialog({ open, onOpenChange, imgUrls, initialIndex = 0 }: P
 
     document.addEventListener("keydown", handleKeyDown);
     return () => document.removeEventListener("keydown", handleKeyDown);
-  }, [open, onOpenChange]);
+  }, [open, onOpenChange, zoomIn, zoomOut, resetZoom]);
 
   const handleClose = () => {
     onOpenChange(false);
   };
 
-  const handleBackdropClick = (event: React.MouseEvent<HTMLDivElement>) => {
+  const handleBackdropClick = (event: MouseEvent<HTMLDivElement>) => {
     if (event.target === event.currentTarget) {
       handleClose();
     }
@@ -101,7 +129,7 @@ function PreviewImageDialog({ open, onOpenChange, imgUrls, initialIndex = 0 }: P
         </div>
 
         {/* Image container */}
-        <div className="w-full h-full flex items-center justify-center p-4 sm:p-8 overflow-auto" onClick={handleBackdropClick}>
+        <div ref={setContainerRef} className="w-full h-full flex items-center justify-center p-4 sm:p-8 overflow-auto" onClick={handleBackdropClick}>
           <img
             src={imgUrls[safeIndex]}
             alt={`Preview image ${safeIndex + 1} of ${imgUrls.length}`}
