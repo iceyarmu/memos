@@ -290,6 +290,7 @@ func convertAttachmentFromStore(attachment *store.Attachment) *v1pb.Attachment {
 		Filename:   attachment.Filename,
 		Type:       attachment.Type,
 		Size:       attachment.Size,
+		Reference:  attachment.Reference,
 	}
 	if attachment.MemoUID != nil && *attachment.MemoUID != "" {
 		memoName := fmt.Sprintf("%s%s", MemoNamePrefix, *attachment.MemoUID)
