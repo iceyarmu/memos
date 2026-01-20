@@ -50,13 +50,38 @@ func (s *APIV1Service) UpsertMemoReaction(ctx context.Context, request *v1pb.Ups
 	reactionMessage := convertReactionFromStore(reaction)
 
 	// Try to dispatch webhook when reaction is created.
-	if memo, err := s.GetMemo(ctx, &v1pb.GetMemoRequest{Name: request.Reaction.ContentId}); err == nil {
-		if err := s.DispatchMemoReactedWebhook(ctx, memo, reactionMessage); err != nil {
-			// Log warning but don't fail the reaction creation
-			slog.Warn("Failed to dispatch memo reacted webhook", slog.Any("err", err))
+	// Use store layer to bypass permission checks - webhooks should always notify memo creator.
+	memoUID, err := ExtractMemoUIDFromName(request.Reaction.ContentId)
+	if err == nil {
+		// Fetch memo directly from store (bypasses permission checks)
+		if memo, err := s.Store.GetMemo(ctx, &store.FindMemo{UID: &memoUID}); err == nil && memo != nil {
+			// Fetch reactions and attachments for complete webhook payload
+			reactions, err := s.Store.ListReactions(ctx, &store.FindReaction{
+				ContentID: &request.Reaction.ContentId,
+			})
+			if err != nil {
+				slog.Warn("Failed to list reactions for webhook", slog.Any("err", err))
+				reactions = []*store.Reaction{}
+			}
+
+			attachments, err := s.Store.ListAttachments(ctx, &store.FindAttachment{
+				MemoID: &memo.ID,
+			})
+			if err != nil {
+				slog.Warn("Failed to list attachments for webhook", slog.Any("err", err))
+				attachments = []*store.Attachment{}
+			}
+
+			// Convert memo to protobuf format
+			if memoMessage, err := s.convertMemoFromStore(ctx, memo, reactions, attachments); err == nil {
+				// Dispatch webhook
+				if err := s.DispatchMemoReactedWebhook(ctx, memoMessage, reactionMessage); err != nil {
+					slog.Warn("Failed to dispatch memo reacted webhook", slog.Any("err", err))
+				}
+			} else {
+				slog.Warn("Failed to convert memo for reaction webhook", slog.Any("err", err))
+			}
 		}
-	} else {
-		slog.Warn("Failed to get memo for reaction webhook", slog.Any("err", err))
 	}
 
 	return reactionMessage, nil
