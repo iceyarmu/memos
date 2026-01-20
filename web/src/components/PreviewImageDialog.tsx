@@ -17,11 +17,17 @@ const SCALE_STEP = 0.25;
 function PreviewImageDialog({ open, onOpenChange, imgUrls, initialIndex = 0 }: Props) {
   const [currentIndex, setCurrentIndex] = useState(initialIndex);
   const [scale, setScale] = useState(1);
+  const [position, setPosition] = useState({ x: 0, y: 0 });
+  const [isDragging, setIsDragging] = useState(false);
+  const dragStartRef = useRef({ x: 0, y: 0, posX: 0, posY: 0 });
   const containerRef = useRef<HTMLDivElement | null>(null);
 
   const zoomIn = useCallback(() => setScale((prev) => Math.min(prev + SCALE_STEP, MAX_SCALE)), []);
   const zoomOut = useCallback(() => setScale((prev) => Math.max(prev - SCALE_STEP, MIN_SCALE)), []);
-  const resetZoom = useCallback(() => setScale(1), []);
+  const resetZoom = useCallback(() => {
+    setScale(1);
+    setPosition({ x: 0, y: 0 });
+  }, []);
 
   // Callback ref to handle wheel zoom - ensures event listener is added when DOM mounts
   const setContainerRef = useCallback(
@@ -50,13 +56,51 @@ function PreviewImageDialog({ open, onOpenChange, imgUrls, initialIndex = 0 }: P
     [zoomIn, zoomOut],
   );
 
-  // Update current index and reset zoom when initialIndex prop changes or dialog opens
+  // Update current index and reset zoom/position when initialIndex prop changes or dialog opens
   useEffect(() => {
     if (open) {
       setCurrentIndex(initialIndex);
       setScale(1);
+      setPosition({ x: 0, y: 0 });
     }
   }, [initialIndex, open]);
+
+  // Handle mouse drag for panning
+  useEffect(() => {
+    if (!open) return;
+
+    const handleMouseMove = (event: globalThis.MouseEvent) => {
+      if (!isDragging) return;
+      const deltaX = event.clientX - dragStartRef.current.x;
+      const deltaY = event.clientY - dragStartRef.current.y;
+      setPosition({
+        x: dragStartRef.current.posX + deltaX,
+        y: dragStartRef.current.posY + deltaY,
+      });
+    };
+
+    const handleMouseUp = () => {
+      setIsDragging(false);
+    };
+
+    document.addEventListener("mousemove", handleMouseMove);
+    document.addEventListener("mouseup", handleMouseUp);
+    return () => {
+      document.removeEventListener("mousemove", handleMouseMove);
+      document.removeEventListener("mouseup", handleMouseUp);
+    };
+  }, [open, isDragging]);
+
+  const handleImageMouseDown = (event: MouseEvent<HTMLImageElement>) => {
+    event.preventDefault();
+    setIsDragging(true);
+    dragStartRef.current = {
+      x: event.clientX,
+      y: event.clientY,
+      posX: position.x,
+      posY: position.y,
+    };
+  };
 
   // Handle keyboard navigation and zoom
   useEffect(() => {
@@ -98,7 +142,8 @@ function PreviewImageDialog({ open, onOpenChange, imgUrls, initialIndex = 0 }: P
   };
 
   const handleBackdropClick = (event: MouseEvent<HTMLDivElement>) => {
-    if (event.target === event.currentTarget) {
+    // Only close if clicking on backdrop (not image) and not dragging
+    if (event.target === event.currentTarget && !isDragging) {
       handleClose();
     }
   };
@@ -133,11 +178,12 @@ function PreviewImageDialog({ open, onOpenChange, imgUrls, initialIndex = 0 }: P
           <img
             src={imgUrls[safeIndex]}
             alt={`Preview image ${safeIndex + 1} of ${imgUrls.length}`}
-            className="max-w-full max-h-full object-contain select-none transition-transform"
-            style={{ transform: `scale(${scale})` }}
+            className={`max-w-full max-h-full object-contain select-none ${isDragging ? "" : "transition-transform"} ${isDragging ? "cursor-grabbing" : "cursor-grab"}`}
+            style={{ transform: `translate(${position.x}px, ${position.y}px) scale(${scale})` }}
             draggable={false}
             loading="eager"
             decoding="async"
+            onMouseDown={handleImageMouseDown}
           />
         </div>
 
