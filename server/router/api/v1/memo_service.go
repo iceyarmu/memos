@@ -568,7 +568,7 @@ func (s *APIV1Service) CreateMemoComment(ctx context.Context, request *v1pb.Crea
 		MemoId: request.CommentId,
 	})
 	if err != nil {
-		return nil, status.Errorf(codes.Internal, "failed to create memo")
+		return nil, status.Errorf(codes.Internal, "failed to create memo: %v", err)
 	}
 	memoUID, err = ExtractMemoUIDFromName(memoComment.Name)
 	if err != nil {
