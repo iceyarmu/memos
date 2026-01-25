@@ -39,7 +39,7 @@ func (s *APIV1Service) ListUsers(ctx context.Context, request *v1pb.ListUsersReq
 	if currentUser == nil {
 		return nil, status.Errorf(codes.Unauthenticated, "user not authenticated")
 	}
-	if currentUser.Role != store.RoleHost && currentUser.Role != store.RoleAdmin {
+	if currentUser.Role != store.RoleAdmin {
 		return nil, status.Errorf(codes.PermissionDenied, "permission denied")
 	}
 
@@ -134,17 +134,17 @@ func (s *APIV1Service) CreateUser(ctx context.Context, request *v1pb.CreateUserR
 	// Determine the role to assign
 	var roleToAssign store.Role
 	if isFirstUser {
-		// First-time setup: create the first user as HOST (no authentication required)
-		roleToAssign = store.RoleHost
-	} else if currentUser != nil && currentUser.Role == store.RoleHost {
-		// Authenticated HOST user can create users with any role specified in request
+		// First-time setup: create the first user as ADMIN (no authentication required)
+		roleToAssign = store.RoleAdmin
+	} else if currentUser != nil && currentUser.Role == store.RoleAdmin {
+		// Authenticated ADMIN user can create users with any role specified in request
 		if request.User.Role != v1pb.User_ROLE_UNSPECIFIED {
 			roleToAssign = convertUserRoleToStore(request.User.Role)
 		} else {
 			roleToAssign = store.RoleUser
 		}
 	} else {
-		// Unauthenticated or non-HOST users can only create normal users
+		// Unauthenticated or non-ADMIN users can only create normal users
 		roleToAssign = store.RoleUser
 	}
 
@@ -179,6 +179,12 @@ func (s *APIV1Service) CreateUser(ctx context.Context, request *v1pb.CreateUserR
 		return nil, status.Errorf(codes.Internal, "failed to create user: %v", err)
 	}
 
+	// If this is the first admin user being created, clear the owner cache
+	// so that GetInstanceProfile will return initialized=true
+	if roleToAssign == store.RoleAdmin {
+		s.ClearInstanceOwnerCache()
+	}
+
 	return convertUserFromStore(user), nil
 }
 
@@ -199,7 +205,7 @@ func (s *APIV1Service) UpdateUser(ctx context.Context, request *v1pb.UpdateUserR
 	}
 	// Check permission.
 	// Only allow admin or self to update user.
-	if currentUser.ID != userID && currentUser.Role != store.RoleAdmin && currentUser.Role != store.RoleHost {
+	if currentUser.ID != userID && currentUser.Role != store.RoleAdmin {
 		return nil, status.Errorf(codes.PermissionDenied, "permission denied")
 	}
 
@@ -266,7 +272,7 @@ func (s *APIV1Service) UpdateUser(ctx context.Context, request *v1pb.UpdateUserR
 			update.Description = &request.User.Description
 		case "role":
 			// Only allow admin to update role.
-			if currentUser.Role != store.RoleAdmin && currentUser.Role != store.RoleHost {
+			if currentUser.Role != store.RoleAdmin {
 				return nil, status.Errorf(codes.PermissionDenied, "permission denied")
 			}
 			role := convertUserRoleToStore(request.User.Role)
@@ -303,7 +309,7 @@ func (s *APIV1Service) DeleteUser(ctx context.Context, request *v1pb.DeleteUserR
 	if err != nil {
 		return nil, status.Errorf(codes.Internal, "failed to get user: %v", err)
 	}
-	if currentUser.ID != userID && currentUser.Role != store.RoleAdmin && currentUser.Role != store.RoleHost {
+	if currentUser.ID != userID && currentUser.Role != store.RoleAdmin {
 		return nil, status.Errorf(codes.PermissionDenied, "permission denied")
 	}
 
@@ -544,7 +550,7 @@ func (s *APIV1Service) ListPersonalAccessTokens(ctx context.Context, request *v1
 	claims := auth.GetUserClaims(ctx)
 	if claims == nil || claims.UserID != userID {
 		currentUser, _ := s.fetchCurrentUser(ctx)
-		if currentUser == nil || (currentUser.ID != userID && currentUser.Role != store.RoleHost && currentUser.Role != store.RoleAdmin) {
+		if currentUser == nil || (currentUser.ID != userID && currentUser.Role != store.RoleAdmin) {
 			return nil, status.Errorf(codes.PermissionDenied, "permission denied")
 		}
 	}
@@ -691,7 +697,7 @@ func (s *APIV1Service) ListUserWebhooks(ctx context.Context, request *v1pb.ListU
 	if currentUser == nil {
 		return nil, status.Errorf(codes.Unauthenticated, "user not authenticated")
 	}
-	if currentUser.ID != userID && currentUser.Role != store.RoleHost && currentUser.Role != store.RoleAdmin {
+	if currentUser.ID != userID && currentUser.Role != store.RoleAdmin {
 		return nil, status.Errorf(codes.PermissionDenied, "permission denied")
 	}
 
@@ -723,7 +729,7 @@ func (s *APIV1Service) CreateUserWebhook(ctx context.Context, request *v1pb.Crea
 	if currentUser == nil {
 		return nil, status.Errorf(codes.Unauthenticated, "user not authenticated")
 	}
-	if currentUser.ID != userID && currentUser.Role != store.RoleHost && currentUser.Role != store.RoleAdmin {
+	if currentUser.ID != userID && currentUser.Role != store.RoleAdmin {
 		return nil, status.Errorf(codes.PermissionDenied, "permission denied")
 	}
 
@@ -763,7 +769,7 @@ func (s *APIV1Service) UpdateUserWebhook(ctx context.Context, request *v1pb.Upda
 	if currentUser == nil {
 		return nil, status.Errorf(codes.Unauthenticated, "user not authenticated")
 	}
-	if currentUser.ID != userID && currentUser.Role != store.RoleHost && currentUser.Role != store.RoleAdmin {
+	if currentUser.ID != userID && currentUser.Role != store.RoleAdmin {
 		return nil, status.Errorf(codes.PermissionDenied, "permission denied")
 	}
 
@@ -835,7 +841,7 @@ func (s *APIV1Service) DeleteUserWebhook(ctx context.Context, request *v1pb.Dele
 	if currentUser == nil {
 		return nil, status.Errorf(codes.Unauthenticated, "user not authenticated")
 	}
-	if currentUser.ID != userID && currentUser.Role != store.RoleHost && currentUser.Role != store.RoleAdmin {
+	if currentUser.ID != userID && currentUser.Role != store.RoleAdmin {
 		return nil, status.Errorf(codes.PermissionDenied, "permission denied")
 	}
 
@@ -930,8 +936,6 @@ func convertUserFromStore(user *store.User) *v1pb.User {
 
 func convertUserRoleFromStore(role store.Role) v1pb.User_Role {
 	switch role {
-	case store.RoleHost:
-		return v1pb.User_HOST
 	case store.RoleAdmin:
 		return v1pb.User_ADMIN
 	case store.RoleUser:
@@ -943,8 +947,6 @@ func convertUserRoleFromStore(role store.Role) v1pb.User_Role {
 
 func convertUserRoleToStore(role v1pb.User_Role) store.Role {
 	switch role {
-	case v1pb.User_HOST:
-		return store.RoleHost
 	case v1pb.User_ADMIN:
 		return store.RoleAdmin
 	default:
