@@ -54,6 +54,14 @@ service MemoService {
     };
     option (google.api.method_signature) = "name";
   }
+  // AddMemoAttachments adds attachments to a memo without removing existing ones.
+  rpc AddMemoAttachments(AddMemoAttachmentsRequest) returns (google.protobuf.Empty) {
+    option (google.api.http) = {
+      put: "/api/v1/{name=memos/*}/attachments"
+      body: "*"
+    };
+    option (google.api.method_signature) = "name";
+  }
   // ListMemoAttachments lists attachments for a memo.
   rpc ListMemoAttachments(ListMemoAttachmentsRequest) returns (ListMemoAttachmentsResponse) {
     option (google.api.http) = {get: "/api/v1/{name=memos/*}/attachments"};
@@ -329,6 +337,18 @@ message SetMemoAttachmentsRequest {
   ];
 
   // Required. The attachments to set for the memo.
+  repeated Attachment attachments = 2 [(google.api.field_behavior) = REQUIRED];
+}
+
+message AddMemoAttachmentsRequest {
+  // Required. The resource name of the memo.
+  // Format: memos/{memo}
+  string name = 1 [
+    (google.api.field_behavior) = REQUIRED,
+    (google.api.resource_reference) = {type: "memos.api.v1/Memo"}
+  ];
+
+  // Required. The attachments to add to the memo.
   repeated Attachment attachments = 2 [(google.api.field_behavior) = REQUIRED];
 }
 

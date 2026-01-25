@@ -26,6 +26,7 @@ const (
 	MemoService_UpdateMemo_FullMethodName          = "/memos.api.v1.MemoService/UpdateMemo"
 	MemoService_DeleteMemo_FullMethodName          = "/memos.api.v1.MemoService/DeleteMemo"
 	MemoService_SetMemoAttachments_FullMethodName  = "/memos.api.v1.MemoService/SetMemoAttachments"
+	MemoService_AddMemoAttachments_FullMethodName  = "/memos.api.v1.MemoService/AddMemoAttachments"
 	MemoService_ListMemoAttachments_FullMethodName = "/memos.api.v1.MemoService/ListMemoAttachments"
 	MemoService_SetMemoRelations_FullMethodName    = "/memos.api.v1.MemoService/SetMemoRelations"
 	MemoService_ListMemoRelations_FullMethodName   = "/memos.api.v1.MemoService/ListMemoRelations"
@@ -52,6 +53,8 @@ type MemoServiceClient interface {
 	DeleteMemo(ctx context.Context, in *DeleteMemoRequest, opts ...grpc.CallOption) (*emptypb.Empty, error)
 	// SetMemoAttachments sets attachments for a memo.
 	SetMemoAttachments(ctx context.Context, in *SetMemoAttachmentsRequest, opts ...grpc.CallOption) (*emptypb.Empty, error)
+	// AddMemoAttachments adds attachments to a memo without removing existing ones.
+	AddMemoAttachments(ctx context.Context, in *AddMemoAttachmentsRequest, opts ...grpc.CallOption) (*emptypb.Empty, error)
 	// ListMemoAttachments lists attachments for a memo.
 	ListMemoAttachments(ctx context.Context, in *ListMemoAttachmentsRequest, opts ...grpc.CallOption) (*ListMemoAttachmentsResponse, error)
 	// SetMemoRelations sets relations for a memo.
@@ -132,6 +135,16 @@ func (c *memoServiceClient) SetMemoAttachments(ctx context.Context, in *SetMemoA
 	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
 	out := new(emptypb.Empty)
 	err := c.cc.Invoke(ctx, MemoService_SetMemoAttachments_FullMethodName, in, out, cOpts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
+func (c *memoServiceClient) AddMemoAttachments(ctx context.Context, in *AddMemoAttachmentsRequest, opts ...grpc.CallOption) (*emptypb.Empty, error) {
+	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
+	out := new(emptypb.Empty)
+	err := c.cc.Invoke(ctx, MemoService_AddMemoAttachments_FullMethodName, in, out, cOpts...)
 	if err != nil {
 		return nil, err
 	}
@@ -234,6 +247,8 @@ type MemoServiceServer interface {
 	DeleteMemo(context.Context, *DeleteMemoRequest) (*emptypb.Empty, error)
 	// SetMemoAttachments sets attachments for a memo.
 	SetMemoAttachments(context.Context, *SetMemoAttachmentsRequest) (*emptypb.Empty, error)
+	// AddMemoAttachments adds attachments to a memo without removing existing ones.
+	AddMemoAttachments(context.Context, *AddMemoAttachmentsRequest) (*emptypb.Empty, error)
 	// ListMemoAttachments lists attachments for a memo.
 	ListMemoAttachments(context.Context, *ListMemoAttachmentsRequest) (*ListMemoAttachmentsResponse, error)
 	// SetMemoRelations sets relations for a memo.
@@ -277,6 +292,9 @@ func (UnimplementedMemoServiceServer) DeleteMemo(context.Context, *DeleteMemoReq
 }
 func (UnimplementedMemoServiceServer) SetMemoAttachments(context.Context, *SetMemoAttachmentsRequest) (*emptypb.Empty, error) {
 	return nil, status.Error(codes.Unimplemented, "method SetMemoAttachments not implemented")
+}
+func (UnimplementedMemoServiceServer) AddMemoAttachments(context.Context, *AddMemoAttachmentsRequest) (*emptypb.Empty, error) {
+	return nil, status.Error(codes.Unimplemented, "method AddMemoAttachments not implemented")
 }
 func (UnimplementedMemoServiceServer) ListMemoAttachments(context.Context, *ListMemoAttachmentsRequest) (*ListMemoAttachmentsResponse, error) {
 	return nil, status.Error(codes.Unimplemented, "method ListMemoAttachments not implemented")
@@ -427,6 +445,24 @@ func _MemoService_SetMemoAttachments_Handler(srv interface{}, ctx context.Contex
 	}
 	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
 		return srv.(MemoServiceServer).SetMemoAttachments(ctx, req.(*SetMemoAttachmentsRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
+func _MemoService_AddMemoAttachments_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(AddMemoAttachmentsRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(MemoServiceServer).AddMemoAttachments(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: MemoService_AddMemoAttachments_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(MemoServiceServer).AddMemoAttachments(ctx, req.(*AddMemoAttachmentsRequest))
 	}
 	return interceptor(ctx, in, info, handler)
 }
@@ -605,6 +641,10 @@ var MemoService_ServiceDesc = grpc.ServiceDesc{
 		{
 			MethodName: "SetMemoAttachments",
 			Handler:    _MemoService_SetMemoAttachments_Handler,
+		},
+		{
+			MethodName: "AddMemoAttachments",
+			Handler:    _MemoService_AddMemoAttachments_Handler,
 		},
 		{
 			MethodName: "ListMemoAttachments",

@@ -289,6 +289,14 @@ func (s *ConnectServiceHandler) SetMemoAttachments(ctx context.Context, req *con
 	return connect.NewResponse(resp), nil
 }
 
+func (s *ConnectServiceHandler) AddMemoAttachments(ctx context.Context, req *connect.Request[v1pb.AddMemoAttachmentsRequest]) (*connect.Response[emptypb.Empty], error) {
+	resp, err := s.APIV1Service.AddMemoAttachments(ctx, req.Msg)
+	if err != nil {
+		return nil, convertGRPCError(err)
+	}
+	return connect.NewResponse(resp), nil
+}
+
 func (s *ConnectServiceHandler) ListMemoAttachments(ctx context.Context, req *connect.Request[v1pb.ListMemoAttachmentsRequest]) (*connect.Response[v1pb.ListMemoAttachmentsResponse], error) {
 	resp, err := s.APIV1Service.ListMemoAttachments(ctx, req.Msg)
 	if err != nil {

@@ -47,6 +47,9 @@ const (
 	// MemoServiceSetMemoAttachmentsProcedure is the fully-qualified name of the MemoService's
 	// SetMemoAttachments RPC.
 	MemoServiceSetMemoAttachmentsProcedure = "/memos.api.v1.MemoService/SetMemoAttachments"
+	// MemoServiceAddMemoAttachmentsProcedure is the fully-qualified name of the MemoService's
+	// AddMemoAttachments RPC.
+	MemoServiceAddMemoAttachmentsProcedure = "/memos.api.v1.MemoService/AddMemoAttachments"
 	// MemoServiceListMemoAttachmentsProcedure is the fully-qualified name of the MemoService's
 	// ListMemoAttachments RPC.
 	MemoServiceListMemoAttachmentsProcedure = "/memos.api.v1.MemoService/ListMemoAttachments"
@@ -87,6 +90,8 @@ type MemoServiceClient interface {
 	DeleteMemo(context.Context, *connect.Request[v1.DeleteMemoRequest]) (*connect.Response[emptypb.Empty], error)
 	// SetMemoAttachments sets attachments for a memo.
 	SetMemoAttachments(context.Context, *connect.Request[v1.SetMemoAttachmentsRequest]) (*connect.Response[emptypb.Empty], error)
+	// AddMemoAttachments adds attachments to a memo without removing existing ones.
+	AddMemoAttachments(context.Context, *connect.Request[v1.AddMemoAttachmentsRequest]) (*connect.Response[emptypb.Empty], error)
 	// ListMemoAttachments lists attachments for a memo.
 	ListMemoAttachments(context.Context, *connect.Request[v1.ListMemoAttachmentsRequest]) (*connect.Response[v1.ListMemoAttachmentsResponse], error)
 	// SetMemoRelations sets relations for a memo.
@@ -152,6 +157,12 @@ func NewMemoServiceClient(httpClient connect.HTTPClient, baseURL string, opts ..
 			connect.WithSchema(memoServiceMethods.ByName("SetMemoAttachments")),
 			connect.WithClientOptions(opts...),
 		),
+		addMemoAttachments: connect.NewClient[v1.AddMemoAttachmentsRequest, emptypb.Empty](
+			httpClient,
+			baseURL+MemoServiceAddMemoAttachmentsProcedure,
+			connect.WithSchema(memoServiceMethods.ByName("AddMemoAttachments")),
+			connect.WithClientOptions(opts...),
+		),
 		listMemoAttachments: connect.NewClient[v1.ListMemoAttachmentsRequest, v1.ListMemoAttachmentsResponse](
 			httpClient,
 			baseURL+MemoServiceListMemoAttachmentsProcedure,
@@ -211,6 +222,7 @@ type memoServiceClient struct {
 	updateMemo          *connect.Client[v1.UpdateMemoRequest, v1.Memo]
 	deleteMemo          *connect.Client[v1.DeleteMemoRequest, emptypb.Empty]
 	setMemoAttachments  *connect.Client[v1.SetMemoAttachmentsRequest, emptypb.Empty]
+	addMemoAttachments  *connect.Client[v1.AddMemoAttachmentsRequest, emptypb.Empty]
 	listMemoAttachments *connect.Client[v1.ListMemoAttachmentsRequest, v1.ListMemoAttachmentsResponse]
 	setMemoRelations    *connect.Client[v1.SetMemoRelationsRequest, emptypb.Empty]
 	listMemoRelations   *connect.Client[v1.ListMemoRelationsRequest, v1.ListMemoRelationsResponse]
@@ -249,6 +261,11 @@ func (c *memoServiceClient) DeleteMemo(ctx context.Context, req *connect.Request
 // SetMemoAttachments calls memos.api.v1.MemoService.SetMemoAttachments.
 func (c *memoServiceClient) SetMemoAttachments(ctx context.Context, req *connect.Request[v1.SetMemoAttachmentsRequest]) (*connect.Response[emptypb.Empty], error) {
 	return c.setMemoAttachments.CallUnary(ctx, req)
+}
+
+// AddMemoAttachments calls memos.api.v1.MemoService.AddMemoAttachments.
+func (c *memoServiceClient) AddMemoAttachments(ctx context.Context, req *connect.Request[v1.AddMemoAttachmentsRequest]) (*connect.Response[emptypb.Empty], error) {
+	return c.addMemoAttachments.CallUnary(ctx, req)
 }
 
 // ListMemoAttachments calls memos.api.v1.MemoService.ListMemoAttachments.
@@ -305,6 +322,8 @@ type MemoServiceHandler interface {
 	DeleteMemo(context.Context, *connect.Request[v1.DeleteMemoRequest]) (*connect.Response[emptypb.Empty], error)
 	// SetMemoAttachments sets attachments for a memo.
 	SetMemoAttachments(context.Context, *connect.Request[v1.SetMemoAttachmentsRequest]) (*connect.Response[emptypb.Empty], error)
+	// AddMemoAttachments adds attachments to a memo without removing existing ones.
+	AddMemoAttachments(context.Context, *connect.Request[v1.AddMemoAttachmentsRequest]) (*connect.Response[emptypb.Empty], error)
 	// ListMemoAttachments lists attachments for a memo.
 	ListMemoAttachments(context.Context, *connect.Request[v1.ListMemoAttachmentsRequest]) (*connect.Response[v1.ListMemoAttachmentsResponse], error)
 	// SetMemoRelations sets relations for a memo.
@@ -364,6 +383,12 @@ func NewMemoServiceHandler(svc MemoServiceHandler, opts ...connect.HandlerOption
 		MemoServiceSetMemoAttachmentsProcedure,
 		svc.SetMemoAttachments,
 		connect.WithSchema(memoServiceMethods.ByName("SetMemoAttachments")),
+		connect.WithHandlerOptions(opts...),
+	)
+	memoServiceAddMemoAttachmentsHandler := connect.NewUnaryHandler(
+		MemoServiceAddMemoAttachmentsProcedure,
+		svc.AddMemoAttachments,
+		connect.WithSchema(memoServiceMethods.ByName("AddMemoAttachments")),
 		connect.WithHandlerOptions(opts...),
 	)
 	memoServiceListMemoAttachmentsHandler := connect.NewUnaryHandler(
@@ -428,6 +453,8 @@ func NewMemoServiceHandler(svc MemoServiceHandler, opts ...connect.HandlerOption
 			memoServiceDeleteMemoHandler.ServeHTTP(w, r)
 		case MemoServiceSetMemoAttachmentsProcedure:
 			memoServiceSetMemoAttachmentsHandler.ServeHTTP(w, r)
+		case MemoServiceAddMemoAttachmentsProcedure:
+			memoServiceAddMemoAttachmentsHandler.ServeHTTP(w, r)
 		case MemoServiceListMemoAttachmentsProcedure:
 			memoServiceListMemoAttachmentsHandler.ServeHTTP(w, r)
 		case MemoServiceSetMemoRelationsProcedure:
@@ -475,6 +502,10 @@ func (UnimplementedMemoServiceHandler) DeleteMemo(context.Context, *connect.Requ
 
 func (UnimplementedMemoServiceHandler) SetMemoAttachments(context.Context, *connect.Request[v1.SetMemoAttachmentsRequest]) (*connect.Response[emptypb.Empty], error) {
 	return nil, connect.NewError(connect.CodeUnimplemented, errors.New("memos.api.v1.MemoService.SetMemoAttachments is not implemented"))
+}
+
+func (UnimplementedMemoServiceHandler) AddMemoAttachments(context.Context, *connect.Request[v1.AddMemoAttachmentsRequest]) (*connect.Response[emptypb.Empty], error) {
+	return nil, connect.NewError(connect.CodeUnimplemented, errors.New("memos.api.v1.MemoService.AddMemoAttachments is not implemented"))
 }
 
 func (UnimplementedMemoServiceHandler) ListMemoAttachments(context.Context, *connect.Request[v1.ListMemoAttachmentsRequest]) (*connect.Response[v1.ListMemoAttachmentsResponse], error) {

@@ -89,6 +89,76 @@ func (s *APIV1Service) SetMemoAttachments(ctx context.Context, request *v1pb.Set
 	return &emptypb.Empty{}, nil
 }
 
+func (s *APIV1Service) AddMemoAttachments(ctx context.Context, request *v1pb.AddMemoAttachmentsRequest) (*emptypb.Empty, error) {
+	user, err := s.fetchCurrentUser(ctx)
+	if err != nil {
+		return nil, status.Errorf(codes.Internal, "failed to get current user: %v", err)
+	}
+	if user == nil {
+		return nil, status.Errorf(codes.Unauthenticated, "user not authenticated")
+	}
+	memoUID, err := ExtractMemoUIDFromName(request.Name)
+	if err != nil {
+		return nil, status.Errorf(codes.InvalidArgument, "invalid memo name: %v", err)
+	}
+	memo, err := s.Store.GetMemo(ctx, &store.FindMemo{UID: &memoUID})
+	if err != nil {
+		return nil, status.Errorf(codes.Internal, "failed to get memo")
+	}
+	if memo == nil {
+		return nil, status.Errorf(codes.NotFound, "memo not found")
+	}
+	if memo.CreatorID != user.ID && !isSuperUser(user) {
+		return nil, status.Errorf(codes.PermissionDenied, "permission denied")
+	}
+
+	// Get existing attachments to avoid duplicates.
+	existingAttachments, err := s.Store.ListAttachments(ctx, &store.FindAttachment{
+		MemoID: &memo.ID,
+	})
+	if err != nil {
+		return nil, status.Errorf(codes.Internal, "failed to list attachments")
+	}
+
+	// Build a set of existing attachment UIDs.
+	existingUIDs := make(map[string]bool)
+	for _, att := range existingAttachments {
+		existingUIDs[att.UID] = true
+	}
+
+	slices.Reverse(request.Attachments)
+	// Add attachments that are not already associated with the memo.
+	for index, attachment := range request.Attachments {
+		attachmentUID, err := ExtractAttachmentUIDFromName(attachment.Name)
+		if err != nil {
+			return nil, status.Errorf(codes.InvalidArgument, "invalid attachment name: %v", err)
+		}
+
+		// Skip if already associated with this memo.
+		if existingUIDs[attachmentUID] {
+			continue
+		}
+
+		tempAttachment, err := s.Store.GetAttachment(ctx, &store.FindAttachment{UID: &attachmentUID})
+		if err != nil {
+			return nil, status.Errorf(codes.Internal, "failed to get attachment: %v", err)
+		}
+		if tempAttachment == nil {
+			return nil, status.Errorf(codes.NotFound, "attachment not found: %s", attachment.Name)
+		}
+		updatedTs := time.Now().Unix() + int64(index)
+		if err := s.Store.UpdateAttachment(ctx, &store.UpdateAttachment{
+			ID:        tempAttachment.ID,
+			MemoID:    &memo.ID,
+			UpdatedTs: &updatedTs,
+		}); err != nil {
+			return nil, status.Errorf(codes.Internal, "failed to update attachment: %v", err)
+		}
+	}
+
+	return &emptypb.Empty{}, nil
+}
+
 func (s *APIV1Service) ListMemoAttachments(ctx context.Context, request *v1pb.ListMemoAttachmentsRequest) (*v1pb.ListMemoAttachmentsResponse, error) {
 	memoUID, err := ExtractMemoUIDFromName(request.Name)
 	if err != nil {
