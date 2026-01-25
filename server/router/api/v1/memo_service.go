@@ -745,6 +745,24 @@ func (s *APIV1Service) DispatchMemoReactedWebhook(ctx context.Context, memo *v1p
 	return s.dispatchMemoRelatedWebhook(ctx, memo, reaction, "memos.memo.reacted")
 }
 
+// DispatchMemoReactedWebhookToUser dispatches webhook to a specific user when memo is reacted.
+func (s *APIV1Service) DispatchMemoReactedWebhookToUser(ctx context.Context, userID int32, memo *v1pb.Memo, reaction *v1pb.Reaction) error {
+	webhooks, err := s.Store.GetUserWebhooks(ctx, userID)
+	if err != nil {
+		return err
+	}
+	for _, hook := range webhooks {
+		payload, err := convertMemoToWebhookPayload(memo, reaction)
+		if err != nil {
+			return errors.Wrap(err, "failed to convert memo to webhook payload")
+		}
+		payload.ActivityType = "memos.memo.reacted"
+		payload.URL = hook.Url
+		webhook.PostAsync(payload)
+	}
+	return nil
+}
+
 func (s *APIV1Service) dispatchMemoRelatedWebhook(ctx context.Context, memo *v1pb.Memo, reaction *v1pb.Reaction, activityType string) error {
 	creatorID, err := ExtractUserIDFromName(memo.Creator)
 	if err != nil {

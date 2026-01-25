@@ -81,6 +81,17 @@ func (s *APIV1Service) UpsertMemoReaction(ctx context.Context, request *v1pb.Ups
 				if err := s.DispatchMemoReactedWebhook(ctx, memoMessage, reactionMessage); err != nil {
 					slog.Warn("Failed to dispatch memo reacted webhook", slog.Any("err", err))
 				}
+
+				// If memo has parent (i.e., this is a comment), also dispatch webhook to parent memo's creator
+				if memo.ParentUID != nil && *memo.ParentUID != "" {
+					parentMemo, err := s.Store.GetMemo(ctx, &store.FindMemo{UID: memo.ParentUID})
+					if err == nil && parentMemo != nil && parentMemo.CreatorID != memo.CreatorID {
+						// Avoid duplicate webhook to the same user
+						if err := s.DispatchMemoReactedWebhookToUser(ctx, parentMemo.CreatorID, memoMessage, reactionMessage); err != nil {
+							slog.Warn("Failed to dispatch memo reacted webhook to parent creator", slog.Any("err", err))
+						}
+					}
+				}
 			} else {
 				slog.Warn("Failed to convert memo for reaction webhook", slog.Any("err", err))
 			}
