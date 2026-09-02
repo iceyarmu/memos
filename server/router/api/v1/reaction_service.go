@@ -93,6 +93,9 @@ func (s *APIV1Service) UpsertMemoReaction(ctx context.Context, request *v1pb.Ups
 	}
 
 	s.SSEHub.publishMemoChanged()
+	if err := s.DispatchMemoReactedWebhook(ctx, memo, reactionMessage); err != nil {
+		slog.Warn("Failed to dispatch memo reacted webhook", slog.Any("err", err))
+	}
 
 	return reactionMessage, nil
 }

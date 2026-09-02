@@ -1,12 +1,11 @@
 import { BookmarkIcon } from "lucide-react";
-import { useCallback, useState } from "react";
+import { useCallback } from "react";
 import { Link } from "react-router-dom";
 import RelativeTime from "@/components/RelativeTime";
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from "@/components/ui/tooltip";
 import { useNewMemo } from "@/contexts/NewMemoContext";
 import useNavigateTo from "@/hooks/useNavigateTo";
 import i18n from "@/i18n";
-import { cn } from "@/lib/utils";
 import { Visibility } from "@/types/proto/api/v1/memo_service_pb";
 import type { User } from "@/types/proto/api/v1/user_service_pb";
 import { useTranslate } from "@/utils/i18n";
@@ -23,8 +22,6 @@ import MemoSpaceBadge from "./MemoSpaceBadge";
 
 const MemoHeader: React.FC<MemoHeaderProps> = ({ showCreator, showVisibility, showPinned, showSpace }) => {
   const t = useTranslate();
-  const [reactionSelectorOpen, setReactionSelectorOpen] = useState(false);
-
   const { memo, creator, currentUser, parentPage, parentScope, isArchived, readonly, openEditor } = useMemoViewContext();
   const { createTime, updateTime, displayTime: memoDisplayTime, isDisplayingUpdatedTime, relativeTimeFormat } = useMemoViewDerived();
   const { newMemoName } = useNewMemo();
@@ -83,13 +80,7 @@ const MemoHeader: React.FC<MemoHeaderProps> = ({ showCreator, showVisibility, sh
       </div>
 
       <div className="flex flex-row justify-end items-center select-none shrink-0 gap-2">
-        {currentUser && !isArchived && (
-          <ReactionSelector
-            className={cn("border-none w-auto h-auto", reactionSelectorOpen && "block!", "block sm:hidden sm:group-hover:block")}
-            memo={memo}
-            onOpenChange={setReactionSelectorOpen}
-          />
-        )}
+        {currentUser && !isArchived && <ReactionSelector className="border-none w-auto h-auto" memo={memo} />}
 
         {showVisibility && memo.visibility !== Visibility.PRIVATE && (
           <Tooltip>

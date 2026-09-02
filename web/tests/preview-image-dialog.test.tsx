@@ -152,6 +152,43 @@ describe("<PreviewImageDialog>", () => {
     expect(screen.getByText("120%")).toBeInTheDocument();
   });
 
+  it("zooms and resets image previews with modifier shortcuts", () => {
+    render(
+      <PreviewImageDialog
+        open
+        onOpenChange={vi.fn()}
+        items={[{ id: "image-1", kind: "image", sourceUrl: "/image.jpg", posterUrl: "/image.jpg", filename: "image.jpg" }]}
+      />,
+    );
+
+    fireEvent.keyDown(document, { key: "=", ctrlKey: true });
+    expect(screen.getByText("120%")).toBeInTheDocument();
+
+    fireEvent.keyDown(document, { key: "0", ctrlKey: true });
+    expect(screen.getByText("100%")).toBeInTheDocument();
+  });
+
+  it("pans a zoomed image with pointer dragging", () => {
+    render(
+      <PreviewImageDialog
+        open
+        onOpenChange={vi.fn()}
+        items={[{ id: "image-1", kind: "image", sourceUrl: "/image.jpg", posterUrl: "/image.jpg", filename: "image.jpg" }]}
+      />,
+    );
+
+    const image = screen.getByAltText("Preview image 1 of 1");
+    Object.assign(image, {
+      setPointerCapture: vi.fn(),
+      hasPointerCapture: vi.fn(() => false),
+    });
+    fireEvent.doubleClick(image);
+    fireEvent.pointerDown(image, { pointerId: 1, button: 0, clientX: 10, clientY: 20 });
+    fireEvent.pointerMove(image, { pointerId: 1, clientX: 35, clientY: 55 });
+
+    expect(image).toHaveStyle({ transform: "translate3d(25px, 35px, 0) scale(2)" });
+  });
+
   it("does not show zoom controls for video previews", () => {
     render(
       <PreviewImageDialog

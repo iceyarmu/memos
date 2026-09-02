@@ -914,6 +914,34 @@ paths:
                         application/json:
                             schema:
                                 $ref: '#/components/schemas/Status'
+        put:
+            tags:
+                - MemoService
+            description: AddMemoAttachments adds attachments to a memo without removing existing ones.
+            operationId: MemoService_AddMemoAttachments
+            parameters:
+                - name: memo
+                  in: path
+                  description: The memo id.
+                  required: true
+                  schema:
+                    type: string
+            requestBody:
+                content:
+                    application/json:
+                        schema:
+                            $ref: '#/components/schemas/AddMemoAttachmentsRequest'
+                required: true
+            responses:
+                "200":
+                    description: OK
+                    content: {}
+                default:
+                    description: Default error response
+                    content:
+                        application/json:
+                            schema:
+                                $ref: '#/components/schemas/Status'
         patch:
             tags:
                 - MemoService
@@ -2485,6 +2513,32 @@ paths:
                         application/json:
                             schema:
                                 $ref: '#/components/schemas/Status'
+    /api/v1/users/{user}/tags:
+        get:
+            tags:
+                - UserService
+            description: ListUserTags returns the tags visible to the caller for a specific user.
+            operationId: UserService_ListUserTags
+            parameters:
+                - name: user
+                  in: path
+                  description: The user id.
+                  required: true
+                  schema:
+                    type: string
+            responses:
+                "200":
+                    description: OK
+                    content:
+                        application/json:
+                            schema:
+                                $ref: '#/components/schemas/ListUserTagsResponse'
+                default:
+                    description: Default error response
+                    content:
+                        application/json:
+                            schema:
+                                $ref: '#/components/schemas/Status'
     /api/v1/users/{user}/views:
         get:
             tags:
@@ -2922,6 +2976,22 @@ components:
                 name:
                     type: string
                     description: 'Required. Format: spaces/{space}/invitations/{username}.'
+        AddMemoAttachmentsRequest:
+            required:
+                - name
+                - attachments
+            type: object
+            properties:
+                name:
+                    type: string
+                    description: |-
+                        Required. The resource name of the memo.
+                         Format: memos/{memo}
+                attachments:
+                    type: array
+                    items:
+                        $ref: '#/components/schemas/Attachment'
+                    description: Required. The attachments to add to the memo.
         Attachment:
             required:
                 - filename
@@ -2969,6 +3039,10 @@ components:
                     allOf:
                         - $ref: '#/components/schemas/MediaMetadata'
                     description: Optional. Immutable normalized media metadata explicitly supplied by the client at creation time.
+                reference:
+                    readOnly: true
+                    type: string
+                    description: Output only. The local storage reference path. Empty for non-local storage.
         BatchDeleteAttachmentsRequest:
             required:
                 - names
@@ -3840,6 +3914,13 @@ components:
                         $ref: '#/components/schemas/SpaceInvitation'
                 nextPageToken:
                     type: string
+        ListUserTagsResponse:
+            type: object
+            properties:
+                tags:
+                    type: array
+                    items:
+                        type: string
         ListUserWebhooksResponse:
             type: object
             properties:

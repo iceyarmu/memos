@@ -152,6 +152,42 @@ func TestGetUserStats_TagCountPreservesExactIdentity(t *testing.T) {
 	}, response.TagCount)
 }
 
+func TestListUserTagsSortsHierarchyAndRespectsVisibility(t *testing.T) {
+	ctx := context.Background()
+	ts := NewTestService(t)
+	defer ts.Cleanup()
+
+	user, err := ts.CreateRegularUser(ctx, "list-tags-user")
+	require.NoError(t, err)
+	userName := fmt.Sprintf("users/%s", user.Username)
+	_, err = ts.Store.CreateMemo(ctx, &store.Memo{
+		UID:        "list-tags-public",
+		CreatorID:  user.ID,
+		Content:    "Public tag fixture",
+		Visibility: store.Public,
+		Payload: &storepb.MemoPayload{
+			Tags: []string{"work/project", "work", "🌟personal", "📚Resource/Books", "🎪Resource", ""},
+		},
+	})
+	require.NoError(t, err)
+	_, err = ts.Store.CreateMemo(ctx, &store.Memo{
+		UID:        "list-tags-private",
+		CreatorID:  user.ID,
+		Content:    "Private tag fixture",
+		Visibility: store.Private,
+		Payload:    &storepb.MemoPayload{Tags: []string{"private"}},
+	})
+	require.NoError(t, err)
+
+	publicTags, err := ts.Service.ListUserTags(ctx, &v1pb.ListUserTagsRequest{Parent: userName})
+	require.NoError(t, err)
+	require.Equal(t, []string{"🎪Resource", "📚Resource/Books", "🌟personal", "work", "work/project"}, publicTags.Tags)
+
+	ownerTags, err := ts.Service.ListUserTags(ts.CreateUserContext(ctx, user.ID), &v1pb.ListUserTagsRequest{Parent: userName})
+	require.NoError(t, err)
+	require.Equal(t, []string{"🎪Resource", "📚Resource/Books", "🌟personal", "private", "work", "work/project"}, ownerTags.Tags)
+}
+
 func TestGetUserStats_MemoUpdatedTimestamps(t *testing.T) {
 	ctx := context.Background()
 

@@ -55,4 +55,13 @@ describe("attachment URL builders in share mode", () => {
 
     expect(getAttachmentUrl(attachment)).toBe(attachment.externalLink);
   });
+
+  it("uses the local storage reference on hostnames", () => {
+    const attachment = {
+      ...baseAttachment,
+      reference: "assets/alice/photo.png",
+    } as Attachment;
+
+    expect(getAttachmentUrl(attachment)).toBe(`${origin}/files/assets/alice/photo.png`);
+  });
 });

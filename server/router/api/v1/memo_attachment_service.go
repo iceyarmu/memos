@@ -60,6 +60,82 @@ func (s *APIV1Service) SetMemoAttachments(ctx context.Context, request *v1pb.Set
 	return &emptypb.Empty{}, nil
 }
 
+// AddMemoAttachments adds attachments to a memo without removing existing ones.
+func (s *APIV1Service) AddMemoAttachments(ctx context.Context, request *v1pb.AddMemoAttachmentsRequest) (*emptypb.Empty, error) {
+	user, err := s.fetchCurrentUser(ctx)
+	if err != nil {
+		return nil, status.Errorf(codes.Internal, "failed to get current user: %v", err)
+	}
+	if user == nil {
+		return nil, status.Error(codes.Unauthenticated, "user not authenticated")
+	}
+	memoUID, err := ExtractMemoUIDFromName(request.Name)
+	if err != nil {
+		return nil, status.Errorf(codes.InvalidArgument, "invalid memo name: %v", err)
+	}
+	memo, err := s.Store.GetMemo(ctx, &store.FindMemo{UID: &memoUID})
+	if err != nil {
+		return nil, status.Error(codes.Internal, "failed to get memo")
+	}
+	if memo == nil {
+		return nil, status.Error(codes.NotFound, "memo not found")
+	}
+	if !canModifyMemo(user, memo) {
+		return nil, status.Error(codes.PermissionDenied, "permission denied")
+	}
+
+	currentAttachments, err := s.Store.ListAttachments(ctx, &store.FindAttachment{MemoID: &memo.ID})
+	if err != nil {
+		return nil, status.Error(codes.Internal, "failed to list attachments")
+	}
+	seenUIDs := make(map[string]struct{}, len(currentAttachments)+len(request.Attachments))
+	for _, attachment := range currentAttachments {
+		seenUIDs[attachment.UID] = struct{}{}
+	}
+
+	combined := make([]*v1pb.Attachment, 0, len(currentAttachments)+len(request.Attachments))
+	for _, attachment := range request.Attachments {
+		if attachment == nil {
+			return nil, status.Error(codes.InvalidArgument, "attachment is required")
+		}
+		attachmentUID, err := ExtractAttachmentUIDFromName(attachment.Name)
+		if err != nil {
+			return nil, status.Errorf(codes.InvalidArgument, "invalid attachment name: %v", err)
+		}
+		if _, exists := seenUIDs[attachmentUID]; exists {
+			continue
+		}
+		seenUIDs[attachmentUID] = struct{}{}
+		combined = append(combined, attachment)
+	}
+	if len(combined) == 0 {
+		return &emptypb.Empty{}, nil
+	}
+	for _, attachment := range currentAttachments {
+		combined = append(combined, &v1pb.Attachment{Name: AttachmentNamePrefix + attachment.UID})
+	}
+
+	prepared, err := s.prepareMemoAttachments(ctx, user, memo, combined)
+	if err != nil {
+		return nil, err
+	}
+	requiredAttachmentIDs, err := s.resolveMemoAttachmentReferences(memo.Content, prepared.normalized)
+	if err != nil {
+		return nil, err
+	}
+	updatedTsSec := time.Now().Unix()
+	if err := s.applyMemoMutation(ctx, memo, prepared, &store.UpdateMemo{ID: memo.ID, UpdatedTs: &updatedTsSec}, requiredAttachmentIDs, nil); err != nil {
+		return nil, err
+	}
+	_, _, memoMessage, err := s.buildUpdatedMemoState(ctx, memo.ID)
+	if err != nil {
+		return nil, status.Error(codes.Internal, "failed to build updated memo state")
+	}
+	s.dispatchMemoUpdatedSideEffects(ctx, memoMessage)
+
+	return &emptypb.Empty{}, nil
+}
+
 type preparedMemoAttachments struct {
 	current    []*store.Attachment
 	normalized []*store.Attachment

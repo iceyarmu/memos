@@ -24,6 +24,7 @@ var PublicMethods = map[string]struct{}{
 	"/memos.api.v1.UserService/BatchGetUsers":    {},
 	"/memos.api.v1.UserService/GetUserAvatar":    {},
 	"/memos.api.v1.UserService/GetUserStats":     {},
+	"/memos.api.v1.UserService/ListUserTags":     {},
 	"/memos.api.v1.UserService/ListAllUserStats": {},
 
 	// Identity Provider Service - SSO buttons on login page

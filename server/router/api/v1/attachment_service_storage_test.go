@@ -10,6 +10,15 @@ import (
 )
 
 func TestConvertAttachmentFromStoreHidesManagedStorageReference(t *testing.T) {
+	localAttachment := &store.Attachment{
+		UID:         "local-image",
+		Filename:    "image.png",
+		Type:        "image/png",
+		StorageType: storepb.AttachmentStorageType_LOCAL,
+		Reference:   "assets/image.png",
+	}
+	require.Equal(t, localAttachment.Reference, convertAttachmentFromStore(localAttachment).Reference)
+
 	s3Attachment := &store.Attachment{
 		UID:         "s3-image",
 		Filename:    "image.png",
@@ -18,6 +27,7 @@ func TestConvertAttachmentFromStoreHidesManagedStorageReference(t *testing.T) {
 		Reference:   "https://s3.example.com/presigned-secret",
 	}
 	require.Empty(t, convertAttachmentFromStore(s3Attachment).ExternalLink)
+	require.Empty(t, convertAttachmentFromStore(s3Attachment).Reference)
 
 	externalAttachment := &store.Attachment{
 		UID:         "external-image",
@@ -27,4 +37,9 @@ func TestConvertAttachmentFromStoreHidesManagedStorageReference(t *testing.T) {
 		Reference:   "https://cdn.example.com/image.png",
 	}
 	require.Equal(t, externalAttachment.Reference, convertAttachmentFromStore(externalAttachment).ExternalLink)
+}
+
+func TestReplaceFilenameWithPathTemplateSupportsUsername(t *testing.T) {
+	path := replaceFilenameWithPathTemplate("assets/{username}/{filename}", "photo.png", "alice")
+	require.Equal(t, "assets/alice/photo.png", path)
 }

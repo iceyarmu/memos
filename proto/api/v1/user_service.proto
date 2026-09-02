@@ -70,6 +70,12 @@ service UserService {
     option (google.api.method_signature) = "name";
   }
 
+  // ListUserTags returns the tags visible to the caller for a specific user.
+  rpc ListUserTags(ListUserTagsRequest) returns (ListUserTagsResponse) {
+    option (google.api.http) = {get: "/api/v1/{parent=users/*}/tags"};
+    option (google.api.method_signature) = "parent";
+  }
+
   // GetUserSetting returns the user setting.
   rpc GetUserSetting(GetUserSettingRequest) returns (UserSetting) {
     option (google.api.http) = {get: "/api/v1/{name=users/*/settings/*}"};
@@ -406,6 +412,19 @@ message GetUserStatsRequest {
 
   reserved 3;
   reserved "space", "unassigned";
+}
+
+message ListUserTagsRequest {
+  // Required. The parent user resource.
+  // Format: users/{user}
+  string parent = 1 [
+    (google.api.field_behavior) = REQUIRED,
+    (google.api.resource_reference) = {type: "memos.api.v1/User"}
+  ];
+}
+
+message ListUserTagsResponse {
+  repeated string tags = 1;
 }
 
 message ListAllUserStatsRequest {

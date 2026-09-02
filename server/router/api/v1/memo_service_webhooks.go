@@ -29,6 +29,95 @@ func (s *APIV1Service) DispatchMemoDeletedWebhook(ctx context.Context, memo *v1p
 	return s.dispatchMemoRelatedWebhook(ctx, memo, "memos.memo.deleted")
 }
 
+// DispatchMemoReactedWebhook dispatches reaction webhooks to the memo owner and,
+// for comments, the related memo owner.
+func (s *APIV1Service) DispatchMemoReactedWebhook(ctx context.Context, memo *store.Memo, reaction *v1pb.Reaction) error {
+	if memo == nil || reaction == nil {
+		return status.Error(codes.InvalidArgument, "memo and reaction are required")
+	}
+
+	receivers := map[int32]struct{}{memo.CreatorID: {}}
+	var relatedMemo *store.Memo
+	if memo.ParentUID != nil && *memo.ParentUID != "" {
+		var err error
+		relatedMemo, err = s.Store.GetMemo(ctx, &store.FindMemo{UID: memo.ParentUID})
+		if err != nil {
+			return errors.Wrap(err, "failed to get related memo for reaction webhook")
+		}
+		if relatedMemo != nil {
+			receivers[relatedMemo.CreatorID] = struct{}{}
+		}
+	}
+
+	for receiverID := range receivers {
+		if err := s.dispatchMemoReactionWebhookToUser(ctx, receiverID, memo, relatedMemo, reaction); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
+func (s *APIV1Service) dispatchMemoReactionWebhookToUser(
+	ctx context.Context,
+	receiverID int32,
+	memo, relatedMemo *store.Memo,
+	reaction *v1pb.Reaction,
+) error {
+	receiver, err := s.Store.GetUser(ctx, &store.FindUser{ID: &receiverID})
+	if err != nil {
+		return err
+	}
+	if receiver == nil || receiver.RowStatus != store.Normal {
+		return nil
+	}
+	for _, subject := range []*store.Memo{memo, relatedMemo} {
+		if subject == nil {
+			continue
+		}
+		readContext, err := s.buildMemoReadContextForViewer(ctx, subject, receiver, false, nil)
+		if err != nil {
+			return errors.Wrap(err, "failed to resolve reaction webhook subject access")
+		}
+		if !access.CheckMemoReadContext(readContext).Allowed() {
+			return nil
+		}
+	}
+
+	receiverCtx := auth.SetUserInContext(ctx, receiver, "")
+	reactions, err := s.Store.ListReactions(receiverCtx, &store.FindReaction{MemoID: &memo.ID})
+	if err != nil {
+		return err
+	}
+	attachments, err := s.Store.ListAttachments(receiverCtx, &store.FindAttachment{MemoID: &memo.ID})
+	if err != nil {
+		return err
+	}
+	relations, err := s.loadMemoRelations(receiverCtx, memo)
+	if err != nil {
+		return err
+	}
+	memoMessage, err := s.convertMemoFromStore(receiverCtx, memo, reactions, attachments, relations)
+	if err != nil {
+		return err
+	}
+	webhooks, err := s.Store.GetUserWebhooks(ctx, receiverID)
+	if err != nil {
+		return err
+	}
+	for _, hook := range webhooks {
+		payload, err := convertMemoToWebhookPayload(memoMessage)
+		if err != nil {
+			return errors.Wrap(err, "failed to convert memo to webhook payload")
+		}
+		payload.ActivityType = "memos.memo.reacted"
+		payload.Reaction = reaction
+		payload.URL = hook.Url
+		payload.SigningSecret = hook.SigningSecret
+		webhook.PostAsync(payload)
+	}
+	return nil
+}
+
 // DispatchMemoCommentCreatedWebhook dispatches webhook to the related memo owner when a comment is created.
 func (s *APIV1Service) DispatchMemoCommentCreatedWebhook(
 	ctx context.Context,

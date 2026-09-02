@@ -3,7 +3,10 @@ package v1
 import (
 	"context"
 	"fmt"
+	"sort"
+	"strings"
 	"time"
+	"unicode"
 
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/status"
@@ -284,6 +287,62 @@ func (s *APIV1Service) GetUserStats(ctx context.Context, request *v1pb.GetUserSt
 	}
 
 	return userStats, nil
+}
+
+// ListUserTags returns the distinct tags visible to the caller for a user.
+func (s *APIV1Service) ListUserTags(ctx context.Context, request *v1pb.ListUserTagsRequest) (*v1pb.ListUserTagsResponse, error) {
+	stats, err := s.GetUserStats(ctx, &v1pb.GetUserStatsRequest{Name: request.Parent})
+	if err != nil {
+		return nil, err
+	}
+
+	tags := make([]string, 0, len(stats.TagCount))
+	for tag := range stats.TagCount {
+		if tag != "" {
+			tags = append(tags, tag)
+		}
+	}
+	sortTagsByHierarchy(tags)
+	return &v1pb.ListUserTagsResponse{Tags: tags}, nil
+}
+
+func sortTagsByHierarchy(tags []string) {
+	sort.Slice(tags, func(i, j int) bool {
+		left := strings.Split(tags[i], "/")
+		right := strings.Split(tags[j], "/")
+		commonDepth := min(len(left), len(right))
+		for level := range commonDepth {
+			leftLevel := removeEmoji(left[level])
+			rightLevel := removeEmoji(right[level])
+			if leftLevel != rightLevel {
+				return leftLevel < rightLevel
+			}
+		}
+		if len(left) != len(right) {
+			return len(left) < len(right)
+		}
+		return tags[i] < tags[j]
+	})
+}
+
+func removeEmoji(value string) string {
+	var result []rune
+	for _, r := range value {
+		if (r >= 0xFE00 && r <= 0xFE0F) ||
+			r == 0x200D ||
+			r == 0x20E3 ||
+			(r >= 0x2600 && r <= 0x27BF) ||
+			(r >= 0x1F000 && r <= 0x1F02F) ||
+			(r >= 0x1F0A0 && r <= 0x1F1FF) ||
+			(r >= 0x1F300 && r <= 0x1F9FF) ||
+			(r >= 0x1FA70 && r <= 0x1FAFF) {
+			continue
+		}
+		if unicode.IsLetter(r) || unicode.IsDigit(r) || unicode.IsSpace(r) || (unicode.IsPunct(r) && r < 0x2000) {
+			result = append(result, r)
+		}
+	}
+	return string(result)
 }
 
 // incrementTagCounts counts each distinct tag at most once for one memo payload.

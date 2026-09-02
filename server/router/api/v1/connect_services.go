@@ -157,6 +157,14 @@ func (s *ConnectServiceHandler) GetUserStats(ctx context.Context, req *connect.R
 	return connect.NewResponse(resp), nil
 }
 
+func (s *ConnectServiceHandler) ListUserTags(ctx context.Context, req *connect.Request[v1pb.ListUserTagsRequest]) (*connect.Response[v1pb.ListUserTagsResponse], error) {
+	resp, err := s.APIV1Service.ListUserTags(ctx, req.Msg)
+	if err != nil {
+		return nil, convertGRPCError(err)
+	}
+	return connect.NewResponse(resp), nil
+}
+
 func (s *ConnectServiceHandler) GetUserSetting(ctx context.Context, req *connect.Request[v1pb.GetUserSettingRequest]) (*connect.Response[v1pb.UserSetting], error) {
 	resp, err := s.APIV1Service.GetUserSetting(ctx, req.Msg)
 	if err != nil {
@@ -345,6 +353,14 @@ func (s *ConnectServiceHandler) DeleteMemo(ctx context.Context, req *connect.Req
 
 func (s *ConnectServiceHandler) SetMemoAttachments(ctx context.Context, req *connect.Request[v1pb.SetMemoAttachmentsRequest]) (*connect.Response[emptypb.Empty], error) {
 	resp, err := s.APIV1Service.SetMemoAttachments(ctx, req.Msg)
+	if err != nil {
+		return nil, convertGRPCError(err)
+	}
+	return connect.NewResponse(resp), nil
+}
+
+func (s *ConnectServiceHandler) AddMemoAttachments(ctx context.Context, req *connect.Request[v1pb.AddMemoAttachmentsRequest]) (*connect.Response[emptypb.Empty], error) {
+	resp, err := s.APIV1Service.AddMemoAttachments(ctx, req.Msg)
 	if err != nil {
 		return nil, convertGRPCError(err)
 	}

@@ -1,8 +1,14 @@
 import { Attachment, MotionMediaFamily, MotionMediaRole } from "@/types/proto/api/v1/attachment_service_pb";
 
+const isIPAddress = (hostname: string): boolean => /^(\d{1,3}\.){3}\d{1,3}$/.test(hostname) || hostname.includes(":");
+
 export const getAttachmentUrl = (attachment: Attachment) => {
   if (attachment.externalLink) {
     return attachment.externalLink;
+  }
+
+  if (attachment.reference && !isIPAddress(window.location.hostname)) {
+    return `${window.location.origin}/files/${attachment.reference}`;
   }
 
   return `${window.location.origin}/file/${attachment.name}/${attachment.filename}`;

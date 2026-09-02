@@ -1,5 +1,5 @@
 import { ChevronLeft, ChevronRight, InfoIcon, RotateCcw, X, ZoomIn, ZoomOut } from "lucide-react";
-import React, { useEffect, useMemo, useState } from "react";
+import React, { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import MediaMetadataDetails from "@/components/MediaMetadataDetails";
 import MotionPhotoPreview from "@/components/MotionPhotoPreview";
 import { Button } from "@/components/ui/button";
@@ -30,6 +30,9 @@ function PreviewImageDialog({ open, onOpenChange, imgUrls = [], items, initialIn
   const sm = useMediaQuery("sm");
   const [currentIndex, setCurrentIndex] = useState(initialIndex);
   const [zoomScale, setZoomScale] = useState(MIN_ZOOM);
+  const [panPosition, setPanPosition] = useState({ x: 0, y: 0 });
+  const [draggingPointer, setDraggingPointer] = useState<number>();
+  const dragStartRef = useRef({ pointerX: 0, pointerY: 0, panX: 0, panY: 0 });
   const [showDetails, setShowDetails] = useState(false);
   const previewItems = useMemo(
     () => items ?? imgUrls.map((url) => ({ id: url, kind: "image" as const, sourceUrl: url, posterUrl: url, filename: "Image" })),
@@ -52,11 +55,41 @@ function PreviewImageDialog({ open, onOpenChange, imgUrls = [], items, initialIn
   const canGoNext = safeIndex < itemCount - 1;
   const zoomPercent = Math.round(zoomScale * 100);
   const isZoomed = zoomScale > MIN_ZOOM;
+  const resetZoom = useCallback(() => {
+    setZoomScale(MIN_ZOOM);
+    setPanPosition({ x: 0, y: 0 });
+  }, []);
+  const zoomBy = useCallback((delta: number) => {
+    setZoomScale((currentScale) => {
+      const nextScale = clampZoom(currentScale + delta);
+      if (nextScale === MIN_ZOOM) {
+        setPanPosition({ x: 0, y: 0 });
+      }
+      return nextScale;
+    });
+  }, []);
 
   useEffect(() => {
     const handleKeyDown = (event: KeyboardEvent) => {
       if (!open) {
         return;
+      }
+      if (isImagePreview && (event.metaKey || event.ctrlKey)) {
+        switch (event.key) {
+          case "+":
+          case "=":
+            event.preventDefault();
+            zoomBy(ZOOM_STEP);
+            return;
+          case "-":
+            event.preventDefault();
+            zoomBy(-ZOOM_STEP);
+            return;
+          case "0":
+            event.preventDefault();
+            resetZoom();
+            return;
+        }
       }
 
       if (event.key === "ArrowLeft") {
@@ -71,11 +104,12 @@ function PreviewImageDialog({ open, onOpenChange, imgUrls = [], items, initialIn
 
     document.addEventListener("keydown", handleKeyDown);
     return () => document.removeEventListener("keydown", handleKeyDown);
-  }, [itemCount, open]);
+  }, [isImagePreview, itemCount, open, resetZoom, zoomBy]);
 
   useEffect(() => {
-    setZoomScale(MIN_ZOOM);
-  }, [currentItem?.id, open]);
+    resetZoom();
+    setDraggingPointer(undefined);
+  }, [currentItem?.id, open, resetZoom]);
 
   const handleClose = () => onOpenChange(false);
   const handlePrevious = () => {
@@ -85,19 +119,53 @@ function PreviewImageDialog({ open, onOpenChange, imgUrls = [], items, initialIn
     setCurrentIndex((prev) => Math.min(prev + 1, itemCount - 1));
   };
 
-  const updateZoom = (nextScale: number) => {
-    setZoomScale(clampZoom(nextScale));
-  };
-  const resetZoom = () => setZoomScale(MIN_ZOOM);
-  const handleZoomIn = () => updateZoom(zoomScale + ZOOM_STEP);
-  const handleZoomOut = () => updateZoom(zoomScale - ZOOM_STEP);
+  const handleZoomIn = () => zoomBy(ZOOM_STEP);
+  const handleZoomOut = () => zoomBy(-ZOOM_STEP);
   const handleWheel = (event: React.WheelEvent<HTMLDivElement>) => {
     if (isImagePreview) {
       event.preventDefault();
-      updateZoom(zoomScale + (event.deltaY < 0 ? ZOOM_STEP : -ZOOM_STEP));
+      zoomBy(event.deltaY < 0 ? ZOOM_STEP : -ZOOM_STEP);
     }
   };
-  const handleDoubleClick = () => setZoomScale((scale) => (scale === MIN_ZOOM ? DOUBLE_TAP_ZOOM : MIN_ZOOM));
+  const handleDoubleClick = () => {
+    if (isZoomed) {
+      resetZoom();
+    } else {
+      setZoomScale(DOUBLE_TAP_ZOOM);
+    }
+  };
+  const handlePointerDown = (event: React.PointerEvent<HTMLImageElement>) => {
+    if (!isZoomed || event.button !== 0) {
+      return;
+    }
+    event.preventDefault();
+    event.currentTarget.setPointerCapture(event.pointerId);
+    dragStartRef.current = {
+      pointerX: event.clientX,
+      pointerY: event.clientY,
+      panX: panPosition.x,
+      panY: panPosition.y,
+    };
+    setDraggingPointer(event.pointerId);
+  };
+  const handlePointerMove = (event: React.PointerEvent<HTMLImageElement>) => {
+    if (draggingPointer !== event.pointerId) {
+      return;
+    }
+    setPanPosition({
+      x: dragStartRef.current.panX + event.clientX - dragStartRef.current.pointerX,
+      y: dragStartRef.current.panY + event.clientY - dragStartRef.current.pointerY,
+    });
+  };
+  const stopDragging = (event: React.PointerEvent<HTMLImageElement>) => {
+    if (draggingPointer !== event.pointerId) {
+      return;
+    }
+    if (event.currentTarget.hasPointerCapture(event.pointerId)) {
+      event.currentTarget.releasePointerCapture(event.pointerId);
+    }
+    setDraggingPointer(undefined);
+  };
 
   if (!itemCount || !currentItem) {
     return null;
@@ -174,7 +242,7 @@ function PreviewImageDialog({ open, onOpenChange, imgUrls = [], items, initialIn
           data-testid={isImagePreview ? "preview-zoom-surface" : undefined}
           className={cn(
             "flex h-full w-full items-center justify-center px-3 pb-20 pt-16 sm:px-16 sm:pb-8 sm:pt-20",
-            isImagePreview && "cursor-zoom-in",
+            isImagePreview && (isZoomed ? "cursor-default" : "cursor-zoom-in"),
             showDetails && "lg:pr-[26rem]",
           )}
           onWheel={handleWheel}
@@ -221,14 +289,19 @@ function PreviewImageDialog({ open, onOpenChange, imgUrls = [], items, initialIn
                 alt={`Preview image ${safeIndex + 1} of ${itemCount}`}
                 className={cn(
                   "max-h-[calc(100vh-8rem)] max-w-[calc(100vw-1.5rem)] rounded-md object-contain select-none sm:max-h-[calc(100vh-7rem)] sm:max-w-[calc(100vw-8rem)]",
+                  isZoomed && (draggingPointer === undefined ? "cursor-grab" : "cursor-grabbing"),
                   showDetails && "lg:max-w-[calc(100vw-30rem)]",
                 )}
                 style={{
-                  transform: `translate3d(0px, 0px, 0) scale(${zoomScale})`,
-                  transition: "transform 120ms ease-out",
+                  transform: `translate3d(${panPosition.x}px, ${panPosition.y}px, 0) scale(${zoomScale})`,
+                  transition: draggingPointer === undefined ? "transform 120ms ease-out" : "none",
                   transformOrigin: "center center",
                 }}
                 onDoubleClick={handleDoubleClick}
+                onPointerDown={handlePointerDown}
+                onPointerMove={handlePointerMove}
+                onPointerUp={stopDragging}
+                onPointerCancel={stopDragging}
                 draggable={false}
                 loading="eager"
                 decoding="async"

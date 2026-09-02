@@ -39,7 +39,9 @@ func convertAttachmentFromStore(attachment *store.Attachment) *v1pb.Attachment {
 	// Managed storage is always addressed through the authenticated file route.
 	// In particular, never expose an expiring S3 presigned URL as attachment API
 	// metadata because it can outlive a memo visibility change.
-	if attachment.StorageType == storepb.AttachmentStorageType_EXTERNAL {
+	if attachment.StorageType == storepb.AttachmentStorageType_LOCAL {
+		attachmentMessage.Reference = attachment.Reference
+	} else if attachment.StorageType == storepb.AttachmentStorageType_EXTERNAL {
 		attachmentMessage.ExternalLink = attachment.Reference
 	}
 
@@ -47,12 +49,12 @@ func convertAttachmentFromStore(attachment *store.Attachment) *v1pb.Attachment {
 }
 
 // SaveAttachmentBlob saves the blob of attachment based on the storage config.
-func SaveAttachmentBlob(ctx context.Context, profile *profile.Profile, stores *store.Store, create *store.Attachment) error {
+func SaveAttachmentBlob(ctx context.Context, profile *profile.Profile, stores *store.Store, create *store.Attachment, username string) error {
 	instanceStorageSetting, err := stores.GetInstanceStorageSetting(ctx)
 	if err != nil {
 		return errors.Wrap(err, "Failed to find instance storage setting")
 	}
-	return saveAttachmentBlobWithInstanceStorageSetting(ctx, profile, stores, create, instanceStorageSetting)
+	return saveAttachmentBlobWithInstanceStorageSetting(ctx, profile, stores, create, instanceStorageSetting, username)
 }
 
 func saveAttachmentBlobWithInstanceStorageSetting(
@@ -61,6 +63,7 @@ func saveAttachmentBlobWithInstanceStorageSetting(
 	stores *store.Store,
 	create *store.Attachment,
 	instanceStorageSetting *storepb.InstanceStorageSetting,
+	username string,
 ) error {
 	defaultStorage := store.GetDefaultStorage(instanceStorageSetting)
 	if defaultStorage == nil {
@@ -77,7 +80,7 @@ func saveAttachmentBlobWithInstanceStorageSetting(
 		if !strings.Contains(internalPath, "{filename}") {
 			internalPath = filepath.Join(internalPath, "{filename}")
 		}
-		internalPath = replaceFilenameWithPathTemplate(internalPath, create.Filename)
+		internalPath = replaceFilenameWithPathTemplate(internalPath, create.Filename, username)
 		internalPath = filepath.ToSlash(internalPath)
 
 		// Ensure the directory exists.
@@ -116,7 +119,7 @@ func saveAttachmentBlobWithInstanceStorageSetting(
 		if !strings.Contains(filepathTemplate, "{filename}") {
 			filepathTemplate = filepath.Join(filepathTemplate, "{filename}")
 		}
-		filepathTemplate = replaceFilenameWithPathTemplate(filepathTemplate, create.Filename)
+		filepathTemplate = replaceFilenameWithPathTemplate(filepathTemplate, create.Filename, username)
 		key, err := driver.UploadObject(ctx, filepathTemplate, create.Type, bytes.NewReader(create.Blob))
 		if err != nil {
 			return errors.Wrap(err, "failed to upload via storage driver")
@@ -245,7 +248,7 @@ func (s *APIV1Service) GetAttachmentBlob(ctx context.Context, attachment *store.
 
 var fileKeyPattern = regexp.MustCompile(`\{[a-z]{1,9}\}`)
 
-func replaceFilenameWithPathTemplate(path, filename string) string {
+func replaceFilenameWithPathTemplate(path, filename, username string) string {
 	t := time.Now()
 	path = fileKeyPattern.ReplaceAllStringFunc(path, func(s string) string {
 		switch s {
@@ -267,6 +270,8 @@ func replaceFilenameWithPathTemplate(path, filename string) string {
 			return fmt.Sprintf("%02d", t.Second())
 		case "{uuid}":
 			return util.GenUUID()
+		case "{username}":
+			return username
 		default:
 			return s
 		}

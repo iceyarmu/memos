@@ -414,3 +414,73 @@ func TestSetMemoAttachments(t *testing.T) {
 		require.Equal(t, memo.ID, *attachmentAfter.MemoID)
 	})
 }
+
+func TestAddMemoAttachments(t *testing.T) {
+	ctx := context.Background()
+	ts := NewTestService(t)
+	defer ts.Cleanup()
+
+	owner, err := ts.CreateRegularUser(ctx, "add-attachment-owner")
+	require.NoError(t, err)
+	other, err := ts.CreateRegularUser(ctx, "add-attachment-other")
+	require.NoError(t, err)
+	ownerCtx := ts.CreateUserContext(ctx, owner.ID)
+	otherCtx := ts.CreateUserContext(ctx, other.ID)
+
+	memo, err := ts.Service.CreateMemo(ownerCtx, &apiv1.CreateMemoRequest{
+		Memo: &apiv1.Memo{Content: "append attachments", Visibility: apiv1.Visibility_PUBLIC},
+	})
+	require.NoError(t, err)
+	createAttachment := func(filename string) *apiv1.Attachment {
+		t.Helper()
+		attachment, err := ts.Service.CreateAttachment(ownerCtx, &apiv1.CreateAttachmentRequest{
+			Attachment: &apiv1.Attachment{
+				Filename: filename,
+				Type:     "text/plain",
+				Content:  []byte(filename),
+			},
+		})
+		require.NoError(t, err)
+		return attachment
+	}
+	first := createAttachment("first.txt")
+	second := createAttachment("second.txt")
+
+	_, err = ts.Service.SetMemoAttachments(ownerCtx, &apiv1.SetMemoAttachmentsRequest{
+		Name:        memo.Name,
+		Attachments: []*apiv1.Attachment{{Name: first.Name}},
+	})
+	require.NoError(t, err)
+
+	_, err = ts.Service.AddMemoAttachments(ownerCtx, &apiv1.AddMemoAttachmentsRequest{
+		Name: memo.Name,
+		Attachments: []*apiv1.Attachment{
+			{Name: first.Name},
+			{Name: second.Name},
+			{Name: second.Name},
+		},
+	})
+	require.NoError(t, err)
+
+	listed, err := ts.Service.ListMemoAttachments(ownerCtx, &apiv1.ListMemoAttachmentsRequest{Name: memo.Name})
+	require.NoError(t, err)
+	require.Len(t, listed.Attachments, 2)
+	require.Equal(t, []string{second.Name, first.Name}, []string{listed.Attachments[0].Name, listed.Attachments[1].Name})
+
+	// Re-adding an attached item is idempotent and does not disturb ordering.
+	_, err = ts.Service.AddMemoAttachments(ownerCtx, &apiv1.AddMemoAttachmentsRequest{
+		Name:        memo.Name,
+		Attachments: []*apiv1.Attachment{{Name: second.Name}},
+	})
+	require.NoError(t, err)
+	listed, err = ts.Service.ListMemoAttachments(ownerCtx, &apiv1.ListMemoAttachmentsRequest{Name: memo.Name})
+	require.NoError(t, err)
+	require.Len(t, listed.Attachments, 2)
+	require.Equal(t, []string{second.Name, first.Name}, []string{listed.Attachments[0].Name, listed.Attachments[1].Name})
+
+	_, err = ts.Service.AddMemoAttachments(otherCtx, &apiv1.AddMemoAttachmentsRequest{
+		Name:        memo.Name,
+		Attachments: []*apiv1.Attachment{{Name: second.Name}},
+	})
+	require.Equal(t, codes.PermissionDenied, status.Code(err))
+}

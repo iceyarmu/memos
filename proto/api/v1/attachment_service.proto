@@ -167,6 +167,9 @@ message Attachment {
     (google.api.field_behavior) = OPTIONAL,
     (google.api.field_behavior) = IMMUTABLE
   ];
+
+  // Output only. The local storage reference path. Empty for non-local storage.
+  string reference = 11 [(google.api.field_behavior) = OUTPUT_ONLY];
 }
 
 message CreateAttachmentRequest {

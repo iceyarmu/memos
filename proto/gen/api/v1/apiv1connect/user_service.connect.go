@@ -53,6 +53,9 @@ const (
 	// UserServiceGetUserStatsProcedure is the fully-qualified name of the UserService's GetUserStats
 	// RPC.
 	UserServiceGetUserStatsProcedure = "/memos.api.v1.UserService/GetUserStats"
+	// UserServiceListUserTagsProcedure is the fully-qualified name of the UserService's ListUserTags
+	// RPC.
+	UserServiceListUserTagsProcedure = "/memos.api.v1.UserService/ListUserTags"
 	// UserServiceGetUserSettingProcedure is the fully-qualified name of the UserService's
 	// GetUserSetting RPC.
 	UserServiceGetUserSettingProcedure = "/memos.api.v1.UserService/GetUserSetting"
@@ -128,6 +131,8 @@ type UserServiceClient interface {
 	ListAllUserStats(context.Context, *connect.Request[v1.ListAllUserStatsRequest]) (*connect.Response[v1.ListAllUserStatsResponse], error)
 	// GetUserStats returns statistics for a specific user.
 	GetUserStats(context.Context, *connect.Request[v1.GetUserStatsRequest]) (*connect.Response[v1.UserStats], error)
+	// ListUserTags returns the tags visible to the caller for a specific user.
+	ListUserTags(context.Context, *connect.Request[v1.ListUserTagsRequest]) (*connect.Response[v1.ListUserTagsResponse], error)
 	// GetUserSetting returns the user setting.
 	GetUserSetting(context.Context, *connect.Request[v1.GetUserSettingRequest]) (*connect.Response[v1.UserSetting], error)
 	// UpdateUserSetting updates the user setting.
@@ -227,6 +232,12 @@ func NewUserServiceClient(httpClient connect.HTTPClient, baseURL string, opts ..
 			httpClient,
 			baseURL+UserServiceGetUserStatsProcedure,
 			connect.WithSchema(userServiceMethods.ByName("GetUserStats")),
+			connect.WithClientOptions(opts...),
+		),
+		listUserTags: connect.NewClient[v1.ListUserTagsRequest, v1.ListUserTagsResponse](
+			httpClient,
+			baseURL+UserServiceListUserTagsProcedure,
+			connect.WithSchema(userServiceMethods.ByName("ListUserTags")),
 			connect.WithClientOptions(opts...),
 		),
 		getUserSetting: connect.NewClient[v1.GetUserSettingRequest, v1.UserSetting](
@@ -350,6 +361,7 @@ type userServiceClient struct {
 	deleteUser                  *connect.Client[v1.DeleteUserRequest, emptypb.Empty]
 	listAllUserStats            *connect.Client[v1.ListAllUserStatsRequest, v1.ListAllUserStatsResponse]
 	getUserStats                *connect.Client[v1.GetUserStatsRequest, v1.UserStats]
+	listUserTags                *connect.Client[v1.ListUserTagsRequest, v1.ListUserTagsResponse]
 	getUserSetting              *connect.Client[v1.GetUserSettingRequest, v1.UserSetting]
 	updateUserSetting           *connect.Client[v1.UpdateUserSettingRequest, v1.UserSetting]
 	listUserSettings            *connect.Client[v1.ListUserSettingsRequest, v1.ListUserSettingsResponse]
@@ -408,6 +420,11 @@ func (c *userServiceClient) ListAllUserStats(ctx context.Context, req *connect.R
 // GetUserStats calls memos.api.v1.UserService.GetUserStats.
 func (c *userServiceClient) GetUserStats(ctx context.Context, req *connect.Request[v1.GetUserStatsRequest]) (*connect.Response[v1.UserStats], error) {
 	return c.getUserStats.CallUnary(ctx, req)
+}
+
+// ListUserTags calls memos.api.v1.UserService.ListUserTags.
+func (c *userServiceClient) ListUserTags(ctx context.Context, req *connect.Request[v1.ListUserTagsRequest]) (*connect.Response[v1.ListUserTagsResponse], error) {
+	return c.listUserTags.CallUnary(ctx, req)
 }
 
 // GetUserSetting calls memos.api.v1.UserService.GetUserSetting.
@@ -519,6 +536,8 @@ type UserServiceHandler interface {
 	ListAllUserStats(context.Context, *connect.Request[v1.ListAllUserStatsRequest]) (*connect.Response[v1.ListAllUserStatsResponse], error)
 	// GetUserStats returns statistics for a specific user.
 	GetUserStats(context.Context, *connect.Request[v1.GetUserStatsRequest]) (*connect.Response[v1.UserStats], error)
+	// ListUserTags returns the tags visible to the caller for a specific user.
+	ListUserTags(context.Context, *connect.Request[v1.ListUserTagsRequest]) (*connect.Response[v1.ListUserTagsResponse], error)
 	// GetUserSetting returns the user setting.
 	GetUserSetting(context.Context, *connect.Request[v1.GetUserSettingRequest]) (*connect.Response[v1.UserSetting], error)
 	// UpdateUserSetting updates the user setting.
@@ -614,6 +633,12 @@ func NewUserServiceHandler(svc UserServiceHandler, opts ...connect.HandlerOption
 		UserServiceGetUserStatsProcedure,
 		svc.GetUserStats,
 		connect.WithSchema(userServiceMethods.ByName("GetUserStats")),
+		connect.WithHandlerOptions(opts...),
+	)
+	userServiceListUserTagsHandler := connect.NewUnaryHandler(
+		UserServiceListUserTagsProcedure,
+		svc.ListUserTags,
+		connect.WithSchema(userServiceMethods.ByName("ListUserTags")),
 		connect.WithHandlerOptions(opts...),
 	)
 	userServiceGetUserSettingHandler := connect.NewUnaryHandler(
@@ -742,6 +767,8 @@ func NewUserServiceHandler(svc UserServiceHandler, opts ...connect.HandlerOption
 			userServiceListAllUserStatsHandler.ServeHTTP(w, r)
 		case UserServiceGetUserStatsProcedure:
 			userServiceGetUserStatsHandler.ServeHTTP(w, r)
+		case UserServiceListUserTagsProcedure:
+			userServiceListUserTagsHandler.ServeHTTP(w, r)
 		case UserServiceGetUserSettingProcedure:
 			userServiceGetUserSettingHandler.ServeHTTP(w, r)
 		case UserServiceUpdateUserSettingProcedure:
@@ -817,6 +844,10 @@ func (UnimplementedUserServiceHandler) ListAllUserStats(context.Context, *connec
 
 func (UnimplementedUserServiceHandler) GetUserStats(context.Context, *connect.Request[v1.GetUserStatsRequest]) (*connect.Response[v1.UserStats], error) {
 	return nil, connect.NewError(connect.CodeUnimplemented, errors.New("memos.api.v1.UserService.GetUserStats is not implemented"))
+}
+
+func (UnimplementedUserServiceHandler) ListUserTags(context.Context, *connect.Request[v1.ListUserTagsRequest]) (*connect.Response[v1.ListUserTagsResponse], error) {
+	return nil, connect.NewError(connect.CodeUnimplemented, errors.New("memos.api.v1.UserService.ListUserTags is not implemented"))
 }
 
 func (UnimplementedUserServiceHandler) GetUserSetting(context.Context, *connect.Request[v1.GetUserSettingRequest]) (*connect.Response[v1.UserSetting], error) {
