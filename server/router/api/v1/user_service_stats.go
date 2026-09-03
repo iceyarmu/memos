@@ -3,7 +3,7 @@ package v1
 import (
 	"context"
 	"fmt"
-	"sort"
+	"slices"
 	"strings"
 	"time"
 	"unicode"
@@ -307,21 +307,24 @@ func (s *APIV1Service) ListUserTags(ctx context.Context, request *v1pb.ListUserT
 }
 
 func sortTagsByHierarchy(tags []string) {
-	sort.Slice(tags, func(i, j int) bool {
-		left := strings.Split(tags[i], "/")
-		right := strings.Split(tags[j], "/")
+	slices.SortFunc(tags, func(leftTag, rightTag string) int {
+		left := strings.Split(leftTag, "/")
+		right := strings.Split(rightTag, "/")
 		commonDepth := min(len(left), len(right))
 		for level := range commonDepth {
 			leftLevel := removeEmoji(left[level])
 			rightLevel := removeEmoji(right[level])
 			if leftLevel != rightLevel {
-				return leftLevel < rightLevel
+				return strings.Compare(leftLevel, rightLevel)
 			}
 		}
-		if len(left) != len(right) {
-			return len(left) < len(right)
+		if len(left) < len(right) {
+			return -1
 		}
-		return tags[i] < tags[j]
+		if len(left) > len(right) {
+			return 1
+		}
+		return strings.Compare(leftTag, rightTag)
 	})
 }
 
