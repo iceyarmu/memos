@@ -2,6 +2,7 @@
 package fakes3
 
 import (
+	"bytes"
 	"io"
 	"net/http/httptest"
 	"testing"
@@ -50,6 +51,13 @@ func (s *Server) Config(bucket string) *storepb.StorageS3Config {
 	}
 }
 
+// PutObject writes an object directly into the in-memory store, bypassing
+// the HTTP API, for arranging state that predates the code under test.
+func (s *Server) PutObject(bucket, key, contentType string, content []byte) error {
+	_, err := s.memory.PutObject(bucket, key, map[string]string{"Content-Type": contentType}, bytes.NewReader(content), int64(len(content)), nil)
+	return err
+}
+
 // GetObject reads an object directly from the in-memory store.
 func (s *Server) GetObject(bucket, key string) ([]byte, error) {
 	object, err := s.memory.GetObject(bucket, key, nil)
@@ -58,4 +66,12 @@ func (s *Server) GetObject(bucket, key string) ([]byte, error) {
 	}
 	defer object.Contents.Close()
 	return io.ReadAll(object.Contents)
+}
+
+// DeleteObject removes an object directly from the in-memory store, bypassing
+// the HTTP API, for arranging state where the backend no longer holds an
+// attachment's bytes.
+func (s *Server) DeleteObject(bucket, key string) error {
+	_, err := s.memory.DeleteObject(bucket, key)
+	return err
 }

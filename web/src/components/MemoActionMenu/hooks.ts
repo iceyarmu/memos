@@ -4,32 +4,31 @@ import { useCallback } from "react";
 import toast from "react-hot-toast";
 import { useLocation } from "react-router-dom";
 import { useInstance } from "@/contexts/InstanceContext";
-import { useSpaceContext } from "@/contexts/SpaceContext";
 import { memoKeys, useDeleteMemo, useUpdateMemo } from "@/hooks/useMemoQueries";
 import useNavigateTo from "@/hooks/useNavigateTo";
 import { userKeys } from "@/hooks/useUserQueries";
 import { handleError } from "@/lib/error";
+import { extractMemoIdFromName } from "@/lib/resource-names";
 import { ROUTES } from "@/router/routes";
-import { State } from "@/types/proto/api/v1/common_pb";
-import type { Memo } from "@/types/proto/api/v1/memo_service_pb";
+import { State } from "@/types/proto/api/common_pb";
+import type { Memo } from "@/types/proto/api/memo_service_pb";
 import { useTranslate } from "@/utils/i18n";
 import { checkAllTasks, uncheckAllTasks } from "@/utils/markdown-task-actions";
-import { isMemoDetailPath, type MemoOriginScope } from "../MemoView/navigation";
+import { isMemoDetailPath } from "../MemoView/navigation";
 
 interface UseMemoActionHandlersOptions {
   memo: Memo;
-  parentScope: MemoOriginScope;
+  parentPage?: string;
   onEdit?: () => void;
   setDeleteDialogOpen: (open: boolean) => void;
 }
 
-export const useMemoActionHandlers = ({ memo, parentScope, onEdit, setDeleteDialogOpen }: UseMemoActionHandlersOptions) => {
+export const useMemoActionHandlers = ({ memo, parentPage, onEdit, setDeleteDialogOpen }: UseMemoActionHandlersOptions) => {
   const t = useTranslate();
   const location = useLocation();
   const navigateTo = useNavigateTo();
   const queryClient = useQueryClient();
   const { profile } = useInstance();
-  const { clearSelectedSpace } = useSpaceContext();
   const { mutateAsync: updateMemo } = useUpdateMemo();
   const { mutateAsync: deleteMemo } = useDeleteMemo();
   const isInMemoDetailPage = isMemoDetailPath(location.pathname, memo.name);
@@ -115,9 +114,11 @@ export const useMemoActionHandlers = ({ memo, parentScope, onEdit, setDeleteDial
     if (host === "") {
       host = window.location.origin;
     }
-    copy(`${host}/${memo.name}`);
+    // A comment's link lands on the comment inside its parent memo, as the comment previews do.
+    const path = memo.parent ? `${memo.parent}#${extractMemoIdFromName(memo.name)}` : memo.name;
+    copy(`${host}/${path}`);
     toast.success(t("message.succeed-copy-link"));
-  }, [memo.name, t, profile.instanceUrl]);
+  }, [memo.name, memo.parent, t, profile.instanceUrl]);
 
   const handleCopyContent = useCallback(() => {
     copy(memo.content);
@@ -146,28 +147,16 @@ export const useMemoActionHandlers = ({ memo, parentScope, onEdit, setDeleteDial
     toast.success(t("message.deleted-successfully"));
     if (memo.parent) {
       queryClient.invalidateQueries({ queryKey: memoKeys.comments(memo.parent) });
+      queryClient.invalidateQueries({ queryKey: memoKeys.detail(memo.parent) });
     }
     if (isInMemoDetailPage) {
-      if (parentScope === "all") {
-        clearSelectedSpace();
-      }
-      navigateTo(ROUTES.HOME);
+      navigateTo(parentPage || ROUTES.HOME);
     }
     memoUpdatedCallback();
-  }, [
-    memo.name,
-    memo.parent,
-    t,
-    isInMemoDetailPage,
-    parentScope,
-    clearSelectedSpace,
-    navigateTo,
-    memoUpdatedCallback,
-    deleteMemo,
-    queryClient,
-  ]);
+  }, [memo.name, memo.parent, t, isInMemoDetailPage, parentPage, navigateTo, memoUpdatedCallback, deleteMemo, queryClient]);
 
   return {
+    isInMemoDetailPage,
     handleTogglePinMemoBtnClick,
     handleEditMemoClick,
     handleToggleMemoStatusClick,

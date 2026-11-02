@@ -1,10 +1,7 @@
-import { ROUTES } from "@/router/routes";
+import { matchPath } from "react-router-dom";
+import { ROUTES, resolveCollectionRoute } from "@/router/routes";
 
 export type MemoScope = "home" | "explore" | "archived";
-export type PrimaryMemoScope = Exclude<MemoScope, "archived">;
-
-export const BUILTIN_TASKS_VIEW_ID = "__built_in_tasks__";
-export const BUILTIN_TASKS_VIEW_FILTER = "has_task_list && has_incomplete_tasks";
 
 export const getMemoViewId = (name: string): string => {
   const parts = name.split("/");
@@ -16,18 +13,28 @@ const cleanPathname = (value: string): string => {
   return pathname.length > 1 ? pathname.replace(/\/+$/, "") : pathname;
 };
 
+/** Lower-cased global pathname, so a Space-scoped URL compares like its global twin. */
+const comparablePathname = (pathname: string): string => resolveCollectionRoute(pathname).pathname.toLowerCase();
+
 export const isMemoScopeRoute = (pathname: string): boolean => {
-  const comparablePath = cleanPathname(pathname).toLowerCase();
+  const comparablePath = comparablePathname(pathname);
   return comparablePath === ROUTES.HOME || comparablePath === ROUTES.EXPLORE || comparablePath === ROUTES.ARCHIVED;
 };
 
-export const getMemoScopePath = (scope: PrimaryMemoScope): string => {
-  if (scope === "explore") return ROUTES.EXPLORE;
-  return ROUTES.HOME;
+/** `/calendar` and any month or day beneath it. */
+export const isCalendarRoute = (pathname: string): boolean => {
+  const comparablePath = comparablePathname(pathname);
+  return comparablePath === ROUTES.CALENDAR || comparablePath.startsWith(`${ROUTES.CALENDAR}/`);
 };
 
+/**
+ * Routes that render a memo collection the sidebar can narrow. Views, calendar days,
+ * and tags apply in place on all of them.
+ */
+export const isMemoCollectionRoute = (pathname: string): boolean =>
+  isMemoScopeRoute(pathname) || isCalendarRoute(pathname) || matchPath(ROUTES.MAP, comparablePathname(pathname)) !== null;
+
 interface ResolveMemoScopeOptions {
-  currentUsername?: string;
   detailFrom?: string;
   memoArchived?: boolean;
   fallback?: MemoScope;
@@ -35,19 +42,13 @@ interface ResolveMemoScopeOptions {
 
 export const resolveMemoScope = (pathname: string, options: ResolveMemoScopeOptions = {}): MemoScope => {
   const cleanPath = cleanPathname(pathname);
-  const comparablePath = cleanPath.toLowerCase();
+  const comparablePath = comparablePathname(cleanPath);
   if (comparablePath === ROUTES.EXPLORE) return "explore";
   if (comparablePath === ROUTES.ARCHIVED) return "archived";
   if (comparablePath === ROUTES.HOME) return "home";
 
-  const profileMatch = cleanPath.match(/^\/u\/([^/]+)$/i);
-  if (profileMatch) {
-    return options.currentUsername && decodeURIComponent(profileMatch[1]) === options.currentUsername ? "home" : "explore";
-  }
-
   if (comparablePath.startsWith("/memos/") && options.detailFrom) {
     return resolveMemoScope(options.detailFrom, {
-      currentUsername: options.currentUsername,
       fallback: options.fallback,
     });
   }

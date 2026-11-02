@@ -9,8 +9,8 @@ import (
 	"github.com/pkg/errors"
 	"google.golang.org/protobuf/proto"
 
-	"github.com/usememos/memos/internal/storage"
 	storepb "github.com/usememos/memos/proto/gen/store"
+	"github.com/usememos/memos/provider/storage"
 )
 
 const (
@@ -220,9 +220,9 @@ func ResolveStorage(
 		if configuredStorage := FindStorage(setting, storageID); configuredStorage != nil {
 			return configuredStorage, nil
 		}
-		// The registry may have been rebuilt without preserving IDs (deployment
-		// config file, restored backup, rollback round-trip); fall through to the
-		// legacy chain rather than permanently orphaning the attachment.
+		// The registry may have been rebuilt without preserving IDs (restored
+		// backup, rollback round-trip); fall through to the legacy chain rather
+		// than permanently orphaning the attachment.
 	}
 
 	s3Config := legacyS3Config

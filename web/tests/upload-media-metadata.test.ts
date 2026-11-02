@@ -1,29 +1,28 @@
 import { create } from "@bufbuild/protobuf";
 import { beforeEach, describe, expect, it, vi } from "vitest";
-import type { LocalFile } from "@/components/MemoEditor/types/attachment";
-import { MediaMetadataSchema } from "@/types/proto/api/v1/attachment_service_pb";
+import type { LocalFile } from "@/components/MemoEditor/edit/types/attachment";
+import { MediaMetadataSchema } from "@/types/proto/api/attachment_service_pb";
 
 const mocks = vi.hoisted(() => ({
-  createAttachment: vi.fn(),
+  uploadAttachment: vi.fn(),
   extractMetadata: vi.fn(),
 }));
 
 // The ingest helper lives beside useFileUpload, whose module graph reaches
 // AuthContext and the query hooks; stub every client they name-import.
 vi.mock("@/connect", () => ({
-  attachmentServiceClient: { createAttachment: mocks.createAttachment },
+  attachmentServiceClient: { uploadAttachment: mocks.uploadAttachment },
   authServiceClient: {},
   userServiceClient: {},
-  memoViewServiceClient: {},
   refreshAccessToken: vi.fn(),
 }));
 
-vi.mock("@/components/MemoEditor/services/mediaMetadataService", () => ({
+vi.mock("@/components/MemoEditor/edit/services/mediaMetadataService", () => ({
   mediaMetadataService: { extract: mocks.extractMetadata },
 }));
 
-import { toLocalFiles } from "@/components/MemoEditor/hooks/useFileUpload";
-import { uploadService } from "@/components/MemoEditor/services/uploadService";
+import { toLocalFiles } from "@/components/MemoEditor/edit/hooks/useFileUpload";
+import { uploadService } from "@/components/MemoEditor/edit/services/uploadService";
 
 const createBlobUrl = (file: File) => `blob:${file.name}`;
 
@@ -58,14 +57,19 @@ describe("media metadata at file ingest", () => {
 
 describe("uploadService media metadata", () => {
   beforeEach(() => {
-    mocks.createAttachment.mockImplementation(async ({ attachment }) => attachment);
+    mocks.uploadAttachment.mockImplementation(async ({ data }) => ({
+      uploadId: "test-id",
+      maxChunkSize: 2 * 1024 * 1024,
+      committedSize: BigInt(data?.length ?? 0),
+      attachment: data ? { name: "attachments/test" } : undefined,
+    }));
   });
 
   it("submits no metadata for files ingested without any", async () => {
     await uploadService.uploadFiles([localImage()]);
 
-    expect(mocks.createAttachment).toHaveBeenCalledOnce();
-    expect(mocks.createAttachment.mock.calls[0][0].attachment.mediaMetadata).toBeUndefined();
+    expect(mocks.uploadAttachment).toHaveBeenCalledTimes(2);
+    expect(mocks.uploadAttachment.mock.calls[0][0].upload.value.attachment.mediaMetadata).toBeUndefined();
   });
 
   it("submits the metadata extracted at ingest", async () => {
@@ -73,14 +77,14 @@ describe("uploadService media metadata", () => {
 
     await uploadService.uploadFiles([localImage(Promise.resolve(metadata))]);
 
-    expect(mocks.createAttachment.mock.calls[0][0].attachment.mediaMetadata).toEqual(metadata);
+    expect(mocks.uploadAttachment.mock.calls[0][0].upload.value.attachment.mediaMetadata).toEqual(metadata);
   });
 
   it("continues without metadata when extraction produced no usable values", async () => {
     await uploadService.uploadFiles([localImage(Promise.resolve(undefined))]);
 
-    expect(mocks.createAttachment).toHaveBeenCalledOnce();
-    expect(mocks.createAttachment.mock.calls[0][0].attachment.mediaMetadata).toBeUndefined();
+    expect(mocks.uploadAttachment).toHaveBeenCalledTimes(2);
+    expect(mocks.uploadAttachment.mock.calls[0][0].upload.value.attachment.mediaMetadata).toBeUndefined();
   });
 
   it("submits ingest-time metadata end to end", async () => {
@@ -90,6 +94,6 @@ describe("uploadService media metadata", () => {
 
     await uploadService.uploadFiles(toLocalFiles([file], { createBlobUrl, saveMediaMetadata: true }));
 
-    expect(mocks.createAttachment.mock.calls[0][0].attachment.mediaMetadata).toEqual(metadata);
+    expect(mocks.uploadAttachment.mock.calls[0][0].upload.value.attachment.mediaMetadata).toEqual(metadata);
   });
 });

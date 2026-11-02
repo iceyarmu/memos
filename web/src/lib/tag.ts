@@ -1,4 +1,4 @@
-import type { UserSetting_TagMetadata, UserSetting_TagsSetting } from "@/types/proto/api/v1/user_service_pb";
+import type { UserSetting_TagMetadata, UserSetting_TagsSetting } from "@/types/proto/api/user_service_pb";
 
 // Cache compiled regexes to avoid re-compiling on every tag render.
 const compiledPatternCache = new Map<string, RegExp | null>();
@@ -71,3 +71,7 @@ export const isValidTagPattern = (pattern: string): boolean => {
   }
   return true;
 };
+
+/** Whether any of the memo's tags is set to blur its content for this user. */
+export const isMemoBlurred = (memo: { tags: string[] }, tagsSetting: UserSetting_TagsSetting | undefined): boolean =>
+  tagsSetting !== undefined && memo.tags.some((tag) => findTagMetadata(tag, tagsSetting)?.blurContent === true);

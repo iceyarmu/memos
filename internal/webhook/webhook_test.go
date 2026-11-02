@@ -1,6 +1,7 @@
 package webhook
 
 import (
+	"context"
 	"crypto/hmac"
 	"crypto/sha256"
 	"encoding/base64"
@@ -39,6 +40,14 @@ func TestConfigurePrivateDestinationAllowlist(t *testing.T) {
 		require.NoError(t, ConfigurePrivateDestinationAllowlist([]string{"127.0.0.42"}))
 		require.NoError(t, ValidateURL("http://127.0.0.42/hook"))
 		require.Error(t, ValidateURL("http://127.0.0.43/hook"))
+	})
+
+	t.Run("CGNAT requires an explicit allowlist entry", func(t *testing.T) {
+		resetPrivateDestinationPolicy(t)
+		require.Error(t, ValidateURL("http://100.100.100.200/hook"))
+		require.NoError(t, ConfigurePrivateDestinationAllowlist([]string{"100.100.100.200"}))
+		require.NoError(t, ValidateURL("http://100.100.100.200/hook"))
+		require.Error(t, ValidateURL("http://100.100.100.201/hook"))
 	})
 
 	t.Run("CIDR is normalized and allowed", func(t *testing.T) {
@@ -125,7 +134,7 @@ func TestPostChecksRedirectDestinationAtDialTime(t *testing.T) {
 	defer redirectSource.Close()
 
 	sourceURL := strings.Replace(redirectSource.URL, "127.0.0.1", "localhost", 1)
-	err := Post(&WebhookRequestPayload{URL: sourceURL})
+	err := Post(&Request{URL: sourceURL})
 	require.ErrorContains(t, err, "connection to reserved/private IP address is not allowed")
 	require.False(t, redirectedRequestReceived.Load())
 }
@@ -149,7 +158,7 @@ func TestPostAllowsExplicitPrivateIPPolicyAtDialTime(t *testing.T) {
 			}))
 			defer server.Close()
 
-			require.NoError(t, Post(&WebhookRequestPayload{URL: server.URL}))
+			require.NoError(t, Post(&Request{URL: server.URL}))
 		})
 	}
 }
@@ -255,10 +264,9 @@ func TestPostSignsRequest(t *testing.T) {
 			}))
 			defer server.Close()
 
-			err := Post(&WebhookRequestPayload{
+			err := Post(&Request{
 				URL:           server.URL,
-				ActivityType:  "memos.memo.created",
-				Creator:       "users/1",
+				Label:         "memos.memo.created",
 				SigningSecret: tc.secret,
 			})
 			require.NoError(t, err)
@@ -292,11 +300,108 @@ func TestPostWithoutSecretSetsNoSignatureHeaders(t *testing.T) {
 	}))
 	defer server.Close()
 
-	err := Post(&WebhookRequestPayload{
-		URL:          server.URL,
-		ActivityType: "memos.memo.created",
-		Creator:      "users/1",
+	err := Post(&Request{
+		URL:   server.URL,
+		Label: "memos.memo.created",
 	})
 	require.NoError(t, err)
 	require.False(t, hasSignatureHeaders, "no signature headers should be set when no secret is configured")
+}
+
+func TestIsReservedIP(t *testing.T) {
+	tests := []struct {
+		name     string
+		ip       string
+		reserved bool
+	}{
+		{name: "loopback", ip: "127.0.0.1", reserved: true},
+		{name: "private 10", ip: "10.0.0.1", reserved: true},
+		{name: "private 172", ip: "172.16.0.1", reserved: true},
+		{name: "private 192", ip: "192.168.1.1", reserved: true},
+		{name: "link local imds", ip: "169.254.169.254", reserved: true},
+		{name: "cgnat lower bound", ip: "100.64.0.1", reserved: true},
+		{name: "cgnat alibaba metadata", ip: "100.100.100.200", reserved: true},
+		{name: "cgnat upper bound", ip: "100.127.255.255", reserved: true},
+		{name: "mapped ipv6 cgnat", ip: "::ffff:100.100.100.200", reserved: true},
+		{name: "ipv6 loopback", ip: "::1", reserved: true},
+		{name: "below cgnat", ip: "100.63.255.255", reserved: false},
+		{name: "above cgnat", ip: "100.128.0.0", reserved: false},
+		{name: "public dns", ip: "8.8.8.8", reserved: false},
+	}
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			require.Equal(t, test.reserved, isReservedIP(net.ParseIP(test.ip)))
+		})
+	}
+}
+
+func TestValidateURLRejectsCGNAT(t *testing.T) {
+	resetPrivateDestinationPolicy(t)
+	require.Error(t, ValidateURL("http://100.100.100.200/hook"))
+}
+
+// TestPostRejectsUnspecifiedAddressDestination pins that a webhook URL pointing at the
+// unspecified address is refused at dial time, bcs the kernel treats it as the local host.
+func TestPostRejectsUnspecifiedAddressDestination(t *testing.T) {
+	resetPrivateDestinationPolicy(t)
+
+	var receivedRequest atomic.Bool
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		receivedRequest.Store(true)
+		_, _ = w.Write([]byte(`{"code":0}`))
+	}))
+	defer server.Close()
+
+	_, port, err := net.SplitHostPort(strings.TrimPrefix(server.URL, "http://"))
+	require.NoError(t, err)
+
+	err = Post(&Request{
+		URL:   "http://0.0.0.0:" + port,
+		Label: "memos.memo.created",
+	})
+	require.Error(t, err)
+	require.False(t, receivedRequest.Load(), "the webhook must not reach a local service through the unspecified address")
+}
+
+// TestValidateURLRejectsUnspecifiedAddress ensures webhook URL validation also refuses
+// the unspecified address, so such URLs never even reach the dispatch path.
+func TestValidateURLRejectsUnspecifiedAddress(t *testing.T) {
+	resetPrivateDestinationPolicy(t)
+
+	require.Error(t, ValidateURL("http://0.0.0.0:8080/hook"))
+	require.Error(t, ValidateURL("http://[::]:8080/hook"))
+}
+
+func TestValidateURLCGNAT(t *testing.T) {
+	resetPrivateDestinationPolicy(t)
+	tests := []struct {
+		ip      string
+		blocked bool
+	}{
+		{"100.63.255.255", false},
+		{"100.64.0.0", true},
+		{"100.100.100.200", true},
+		{"100.127.255.255", true},
+		{"100.128.0.0", false},
+		{"::ffff:100.64.0.0", true},
+		{"::ffff:100.100.100.200", true},
+		{"::ffff:100.127.255.255", true},
+		{"::ffff:100.128.0.0", false},
+	}
+	for _, tc := range tests {
+		t.Run(tc.ip, func(t *testing.T) {
+			address := net.JoinHostPort(tc.ip, "80")
+			err := ValidateURL("http://" + address + "/hook")
+			if tc.blocked {
+				require.ErrorContains(t, err, "must not resolve to a reserved or private IP address")
+				// Cancellation prevents any network connection if the guard regresses.
+				ctx, cancel := context.WithCancel(context.Background())
+				cancel()
+				_, err = safeDialContext(ctx, "tcp", address)
+				require.ErrorContains(t, err, "connection to reserved/private IP address is not allowed")
+			} else {
+				require.NoError(t, err)
+			}
+		})
+	}
 }

@@ -1,41 +1,42 @@
-import { BookmarkIcon } from "lucide-react";
-import { useCallback } from "react";
-import { Link } from "react-router-dom";
+import { Link, useLocation } from "react-router-dom";
 import RelativeTime from "@/components/RelativeTime";
-import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from "@/components/ui/tooltip";
+import { Button, buttonVariants } from "@/components/ui/button";
+import { FOCUS_VISIBLE_OUTLINE_CLASSES } from "@/components/ui/focus";
+import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
 import { useNewMemo } from "@/contexts/NewMemoContext";
-import useNavigateTo from "@/hooks/useNavigateTo";
 import i18n from "@/i18n";
-import { Visibility } from "@/types/proto/api/v1/memo_service_pb";
-import type { User } from "@/types/proto/api/v1/user_service_pb";
+import { cn } from "@/lib/utils";
+import { getCreatorHomePath } from "@/router/routes";
+import { Visibility } from "@/types/proto/api/memo_service_pb";
+import type { User } from "@/types/proto/api/user_service_pb";
 import { useTranslate } from "@/utils/i18n";
 import { getVisibilityOption } from "@/utils/memo";
 import MemoActionMenu from "../../MemoActionMenu";
 import { ReactionSelector } from "../../MemoReactionListView";
 import UserAvatar from "../../UserAvatar";
 import VisibilityIcon from "../../VisibilityIcon";
-import { useMemoActions } from "../hooks";
+import { MEMO_TIME_CONTROL_CLASSES } from "../constants";
 import { useMemoViewContext, useMemoViewDerived } from "../MemoViewContext";
-import { createMemoNavigationState } from "../navigation";
+import { createMemoNavigationState, isMemoDetailPath } from "../navigation";
 import type { MemoHeaderProps } from "../types";
 import MemoSpaceBadge from "./MemoSpaceBadge";
 
-const MemoHeader: React.FC<MemoHeaderProps> = ({ showCreator, showVisibility, showPinned, showSpace }) => {
+/** The card's trailing actions are the kit's quiet 24px squares, whether or not they are kit buttons. */
+const MEMO_HEADER_ACTION_CLASSES = cn(buttonVariants({ variant: "quiet", size: "icon-sm" }));
+
+const MemoHeader: React.FC<MemoHeaderProps> = ({ timeDisplay = "relative", showCreator, showVisibility, showSpace }) => {
   const t = useTranslate();
-  const { memo, creator, currentUser, parentPage, parentScope, isArchived, readonly, openEditor } = useMemoViewContext();
+
+  const { memo, creator, currentUser, parentPage, isArchived, readonly, isEditing, openEditor } = useMemoViewContext();
+  const location = useLocation();
   const { createTime, updateTime, displayTime: memoDisplayTime, isDisplayingUpdatedTime, relativeTimeFormat } = useMemoViewDerived();
   const { newMemoName } = useNewMemo();
   const visibilityOption = getVisibilityOption(memo.visibility);
 
-  const navigateTo = useNavigateTo();
-  const handleGotoMemoDetailPage = useCallback(() => {
-    navigateTo(`/${memo.name}`, { state: createMemoNavigationState(parentPage, parentScope) });
-  }, [memo.name, parentPage, parentScope, navigateTo]);
-
-  const { unpinMemo } = useMemoActions(memo);
-
   const timeValue = isArchived ? (
     memoDisplayTime?.toLocaleString(i18n.language)
+  ) : timeDisplay === "time" ? (
+    memoDisplayTime?.toLocaleTimeString(i18n.language, { hour: "numeric", minute: "2-digit" })
   ) : (
     <RelativeTime date={memoDisplayTime} format={relativeTimeFormat} />
   );
@@ -54,99 +55,102 @@ const MemoHeader: React.FC<MemoHeaderProps> = ({ showCreator, showVisibility, sh
         : undefined,
   };
   const spaceMetadata = showSpace && memo.space ? <MemoSpaceBadge spaceName={memo.space} /> : null;
+  const showsCreator = Boolean(showCreator && creator);
+  const isNew = memo.name === newMemoName;
+
+  // While the card edits in place, the header keeps only identity. The time, visibility
+  // and Space show once, in their editable form, in the session below (its timestamp row
+  // and audience menu); reacting or opening the action menu makes no sense mid-edit, and
+  // the "new" mark is for finding the memo in the list, not for the person editing it.
+  // With no identity to show, the row goes and the session's timestamp row takes its place.
+  if (isEditing) {
+    if (!showsCreator || !creator) return null;
+    return (
+      <div className="flex h-6 w-full items-center gap-2">
+        <div data-slot="memo-header-meta" className="flex min-w-0 items-center gap-1.5 overflow-hidden">
+          <CreatorDisplay creator={creator} withSeparator={false} />
+        </div>
+      </div>
+    );
+  }
 
   return (
-    <div className="flex w-full items-center justify-between gap-2">
+    // A fixed 24px row, the height of its action squares, so the card's top edge never
+    // moves with what the header happens to show.
+    <div className="flex h-6 w-full items-center justify-between gap-2">
       <div className="flex min-w-0 flex-1 items-center gap-2">
-        {showCreator && creator ? (
-          <CreatorDisplay
-            creator={creator}
+        {/* The time stays visible while the creator and Space badge can shrink and truncate. */}
+        <div data-slot="memo-header-meta" className="flex min-w-0 items-center gap-1.5 overflow-hidden">
+          {showsCreator && creator && <CreatorDisplay creator={creator} />}
+          <TimeDisplay
             displayTime={displayTime}
             timeTooltip={timeTooltip}
-            trailingMetadata={spaceMetadata}
-            onGotoDetail={handleGotoMemoDetailPage}
+            memoName={memo.name}
+            parentPage={parentPage}
+            isCurrentPage={isMemoDetailPath(location.pathname, memo.name)}
           />
-        ) : (
-          <div data-slot="memo-header-meta" className="flex min-w-0 items-center gap-1.5">
-            <TimeDisplay displayTime={displayTime} timeTooltip={timeTooltip} onGotoDetail={handleGotoMemoDetailPage} />
-            {spaceMetadata}
-          </div>
-        )}
-        {memo.name === newMemoName && (
-          <span className="ml-2 shrink-0 rounded-full bg-primary/10 px-1.5 py-0.5 text-xs font-medium leading-none text-primary">
-            {t("memo.new-badge")}
-          </span>
-        )}
+          {spaceMetadata}
+        </div>
+        {isNew && <NewBadge />}
       </div>
 
-      <div className="flex flex-row justify-end items-center select-none shrink-0 gap-2">
-        {currentUser && !isArchived && <ReactionSelector className="border-none w-auto h-auto" memo={memo} />}
+      <div data-slot="memo-header-actions" className="flex shrink-0 select-none flex-row items-center justify-end gap-1">
+        {currentUser && !isArchived && (
+          <span className="flex">
+            <ReactionSelector memo={memo} trigger={<Button variant="quiet" size="icon-sm" />} />
+          </span>
+        )}
 
         {showVisibility && memo.visibility !== Visibility.PRIVATE && (
           <Tooltip>
-            <TooltipTrigger>
-              <span className="flex justify-center items-center rounded-md hover:opacity-80">
-                <VisibilityIcon visibility={memo.visibility} />
-              </span>
+            <TooltipTrigger aria-label={visibilityOption && t(visibilityOption.labelKey)} className={MEMO_HEADER_ACTION_CLASSES}>
+              <VisibilityIcon visibility={memo.visibility} className="text-current" />
             </TooltipTrigger>
             <TooltipContent>{visibilityOption && t(visibilityOption.labelKey)}</TooltipContent>
           </Tooltip>
         )}
 
-        {showPinned && memo.pinned && (
-          <TooltipProvider>
-            <Tooltip>
-              <TooltipTrigger render={<span className="cursor-pointer" />}>
-                <BookmarkIcon className="w-4 h-auto text-primary" onClick={unpinMemo} />
-              </TooltipTrigger>
-              <TooltipContent>
-                <p>{t("common.unpin")}</p>
-              </TooltipContent>
-            </Tooltip>
-          </TooltipProvider>
-        )}
-
-        <MemoActionMenu memo={memo} parentScope={parentScope} readonly={readonly} onEdit={openEditor} />
+        <MemoActionMenu memo={memo} parentPage={parentPage} readonly={readonly} onEdit={openEditor} />
       </div>
     </div>
   );
 };
 
-interface CreatorDisplayProps {
-  creator: User;
-  displayTime: React.ReactNode;
-  timeTooltip: TimeTooltipContent;
-  trailingMetadata?: React.ReactNode;
-  onGotoDetail: () => void;
-}
+const NewBadge = () => {
+  const t = useTranslate();
+  return (
+    <span className="shrink-0 rounded-full bg-primary/10 px-1.5 py-0.5 text-2xs font-medium leading-none text-primary">
+      {t("memo.new-badge")}
+    </span>
+  );
+};
 
-const CreatorDisplay: React.FC<CreatorDisplayProps> = ({ creator, displayTime, timeTooltip, trailingMetadata, onGotoDetail }) => (
-  <div className="flex min-w-0 items-center">
-    <Link className="w-auto hover:opacity-80 rounded-md transition-colors" to={`/u/${encodeURIComponent(creator.username)}`} viewTransition>
-      <UserAvatar className="mr-2 shrink-0" avatarUrl={creator.avatarUrl} />
+/**
+ * The author on one line with the time: a 20px avatar in a 20px slot, then the name in
+ * medium 13px foreground ink. It is the identity, so it carries the weight; the time after
+ * it is muted, and the separator before it goes when nothing follows.
+ */
+const CreatorDisplay: React.FC<{ creator: User; withSeparator?: boolean }> = ({ creator, withSeparator = true }) => (
+  <>
+    <Link
+      className={cn(
+        "flex min-w-0 shrink items-center gap-1.5 rounded-sm text-ui font-medium text-foreground transition-colors hover:text-foreground/80",
+        FOCUS_VISIBLE_OUTLINE_CLASSES,
+      )}
+      to={getCreatorHomePath(creator.username)}
+      viewTransition
+    >
+      <span className="flex size-5 shrink-0 items-center justify-center">
+        <UserAvatar className="size-5" avatarUrl={creator.avatarUrl} name={creator.displayName || creator.username} />
+      </span>
+      <span className="min-w-0 truncate">{creator.displayName || creator.username}</span>
     </Link>
-    <div className="flex min-w-0 flex-col items-start justify-center">
-      <Link
-        className="block leading-tight hover:opacity-80 rounded-md transition-colors truncate text-muted-foreground"
-        to={`/u/${encodeURIComponent(creator.username)}`}
-        viewTransition
-      >
-        {creator.displayName || creator.username}
-      </Link>
-      <div data-slot="memo-header-meta" className="flex min-w-0 items-center gap-1.5">
-        <TimeTooltip content={timeTooltip}>
-          <button
-            type="button"
-            className="w-auto -mt-0.5 border-0 bg-transparent p-0 text-xs leading-tight text-muted-foreground select-none cursor-pointer hover:opacity-80 transition-colors text-left"
-            onClick={onGotoDetail}
-          >
-            {displayTime}
-          </button>
-        </TimeTooltip>
-        {trailingMetadata}
-      </div>
-    </div>
-  </div>
+    {withSeparator && (
+      <span aria-hidden="true" className="shrink-0 text-muted-foreground/40">
+        ·
+      </span>
+    )}
+  </>
 );
 
 interface TimeTooltipContent {
@@ -167,18 +171,27 @@ const TimeTooltip = ({ children, content }: { children: React.ReactElement; cont
 interface TimeDisplayProps {
   displayTime: React.ReactNode;
   timeTooltip: TimeTooltipContent;
-  onGotoDetail: () => void;
+  memoName: string;
+  parentPage: string;
+  /** On the memo's own page the permalink would lead nowhere, so the time is plain text. */
+  isCurrentPage: boolean;
 }
 
-const TimeDisplay: React.FC<TimeDisplayProps> = ({ displayTime, timeTooltip, onGotoDetail }) => (
+/** The timestamp is the memo's permalink: a real link, so it previews its URL and opens in a new tab. */
+const TimeDisplay: React.FC<TimeDisplayProps> = ({ displayTime, timeTooltip, memoName, parentPage, isCurrentPage }) => (
   <TimeTooltip content={timeTooltip}>
-    <button
-      type="button"
-      className="w-auto border-0 bg-transparent p-0 text-sm leading-tight text-muted-foreground select-none cursor-pointer hover:text-foreground transition-colors text-left"
-      onClick={onGotoDetail}
-    >
-      {displayTime}
-    </button>
+    {isCurrentPage ? (
+      <span className="shrink-0 whitespace-nowrap text-ui text-muted-foreground select-none">{displayTime}</span>
+    ) : (
+      <Link
+        className={cn(MEMO_TIME_CONTROL_CLASSES, "underline-offset-2 hover:underline")}
+        to={`/${memoName}`}
+        state={createMemoNavigationState(parentPage)}
+        viewTransition
+      >
+        {displayTime}
+      </Link>
+    )}
   </TimeTooltip>
 );
 

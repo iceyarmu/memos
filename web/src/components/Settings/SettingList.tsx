@@ -48,6 +48,16 @@ export const SettingListItem = ({
   );
 };
 
+export const StatValue = ({ value }: { value: string }) => (
+  <span className="block min-w-0 max-w-full break-all text-right font-mono text-sm tabular-nums text-foreground">{value}</span>
+);
+
+export const StatRow = ({ label, value }: { label: string; value: string }) => (
+  <SettingListItem label={label} controlClassName="w-full justify-end sm:w-auto">
+    <StatValue value={value} />
+  </SettingListItem>
+);
+
 interface SettingPanelProps {
   children: ReactNode;
   className?: string;
@@ -71,9 +81,10 @@ interface SettingCodeEditorProps {
   value: string;
   placeholder: string;
   onChange: (value: string) => void;
+  disabled?: boolean;
 }
 
-export const SettingCodeEditor = ({ label, description, value, placeholder, onChange }: SettingCodeEditorProps) => {
+export const SettingCodeEditor = ({ label, description, value, placeholder, onChange, disabled }: SettingCodeEditorProps) => {
   return (
     <SettingPanel
       header={
@@ -88,6 +99,7 @@ export const SettingCodeEditor = ({ label, description, value, placeholder, onCh
         rows={4}
         placeholder={placeholder}
         value={value}
+        disabled={disabled}
         onChange={(event) => onChange(event.target.value)}
       />
     </SettingPanel>

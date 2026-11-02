@@ -1,5 +1,7 @@
 import { useDirection } from "@base-ui/react/direction-provider";
 import { type ReactNode, useCallback, useEffect, useLayoutEffect, useRef, useState } from "react";
+import { cn } from "@/lib/utils";
+import { useColumnGridUntrapped } from "./ColumnGridContext";
 
 interface ColumnGridProps<T> {
   items: T[];
@@ -10,6 +12,8 @@ interface ColumnGridProps<T> {
   estimateHeight?: (item: T, context: { columnWidth: number }) => number;
   /** Optional node packed as the very first tile (e.g. the note composer). */
   leading?: ReactNode;
+  /** Optional node spanning the packed columns above them all (e.g. a page identity block). */
+  header?: ReactNode;
   /** Key that must land at the top of column one (e.g. a just-created memo), not the shortest column. */
   priorityKey?: string;
   /** Upper bound on the column count; 0 or undefined means as many as fit. */
@@ -19,6 +23,7 @@ interface ColumnGridProps<T> {
 }
 
 const LEADING_KEY = "__grid_leading__";
+const HEADER_KEY = "__grid_header__";
 
 const GRID_MIN_COLUMN_WIDTH = 260;
 export const GRID_GAP = 12;
@@ -76,11 +81,13 @@ function ColumnGrid<T>({
   renderItem,
   estimateHeight,
   leading,
+  header,
   priorityKey,
   maxColumns,
   maxColumnWidth,
 }: ColumnGridProps<T>) {
   const direction = useDirection();
+  const { untrappedKeys } = useColumnGridUntrapped();
   const containerRef = useRef<HTMLDivElement>(null);
   const itemRefs = useRef<Map<string, HTMLDivElement>>(new Map());
   const refCallbacks = useRef<Map<string, (el: HTMLDivElement | null) => void>>(new Map());
@@ -105,7 +112,15 @@ function ColumnGrid<T>({
     let columnWidth = count > 1 ? Math.floor((width - GRID_GAP * (count - 1)) / count) : width;
     if (maxColumnWidth != null) columnWidth = Math.min(columnWidth, maxColumnWidth);
     // Center the packed columns in whatever width the clamp leaves over.
-    const offsetX = Math.floor((width - (columnWidth * count + GRID_GAP * (count - 1))) / 2);
+    const packedWidth = columnWidth * count + GRID_GAP * (count - 1);
+    const offsetX = Math.floor((width - packedWidth) / 2);
+
+    // The header is not a column item: it spans the packed columns and pushes them all down.
+    const headerEl = itemRefs.current.get(HEADER_KEY);
+    if (headerEl) {
+      headerEl.style.width = `${packedWidth}px`;
+      headerEl.style.left = `${offsetX}px`;
+    }
 
     // Ordered by feed position: the leading tile (composer) first, then items.
     const ordered: { key: string; el: HTMLDivElement }[] = [];
@@ -133,12 +148,17 @@ function ColumnGrid<T>({
     // Pass 2 (reads): height of every card, measured once after the width writes so the
     // browser reflows a single time. We read the inner element, not the absolutely-positioned
     // wrapper (whose block-formatting context would fold in margins).
+    const measure = (el: HTMLElement) => {
+      const child = el.firstElementChild;
+      return child instanceof HTMLElement ? child.offsetHeight : el.offsetHeight;
+    };
     const heightByKey = new Map<string, number>();
     for (const { key, el } of ordered) {
-      const child = el.firstElementChild;
-      heightByKey.set(key, child instanceof HTMLElement ? child.offsetHeight : el.offsetHeight);
+      heightByKey.set(key, measure(el));
     }
     const heightOf = (key: string) => heightByKey.get(key) ?? 0;
+    // Same pass as the cards, so the header's width write above reflows with theirs.
+    const columnStartY = headerEl ? measure(headerEl) + GRID_GAP : 0;
 
     const pinnedKeys = new Set<string>([LEADING_KEY]);
     if (priorityKey) {
@@ -154,7 +174,7 @@ function ColumnGrid<T>({
       },
     });
 
-    const columnY = new Array<number>(count).fill(0);
+    const columnY = new Array<number>(count).fill(columnStartY);
     const pos = new Map<string, { x: number; y: number }>();
     for (const { key } of ordered) {
       const col = columnOf.get(key) ?? 0;
@@ -170,13 +190,14 @@ function ColumnGrid<T>({
     for (const { key, el } of ordered) {
       const target = pos.get(key);
       if (!target) continue;
-      // The leading tile (the note composer) is positioned with left/top rather than a
-      // transform so it never becomes the containing block for its own position:fixed
-      // descendants. A transform (or will-change:transform) here would trap the editor's
-      // focus-mode overlay — which is meant to cover the viewport — inside this column tile.
-      // The leading tile is pinned to column one's top and only shifts horizontally on
-      // resize (which snaps anyway), so it loses no animation by skipping the transform.
-      if (key === LEADING_KEY) {
+      // Untrapped tiles are positioned with left/top rather than a transform so they never
+      // become the containing block for their own position:fixed descendants. A transform
+      // (or will-change:transform) would trap the editor's focus-mode overlay — which is
+      // meant to cover the viewport — inside this column tile. The leading composer tile
+      // always opts out; a memo tile opts out while its inline editor is in focus mode. Both
+      // are pinned horizontally and only shift on resize (which snaps anyway), so neither
+      // loses an animation that matters.
+      if (key === LEADING_KEY || untrappedKeys.has(key)) {
         el.style.transition = "none";
         el.style.transform = "";
         el.style.left = `${target.x}px`;
@@ -185,10 +206,13 @@ function ColumnGrid<T>({
       }
       el.style.transition = "none";
       el.style.transform = `translate3d(${target.x}px, ${target.y}px, 0)`;
+      // Clear any left/top left behind by a previous untrapped stint.
+      el.style.left = "";
+      el.style.top = "";
     }
 
     setContainerHeight(Math.max(0, ...columnY.map((h) => h - GRID_GAP)));
-  }, [items, getKey, estimateHeight, priorityKey, maxColumns, maxColumnWidth, direction]);
+  }, [items, getKey, estimateHeight, priorityKey, maxColumns, maxColumnWidth, direction, untrappedKeys]);
 
   // Keep a stable reference so observer callbacks always run the latest layout.
   const relayoutRef = useRef(relayout);
@@ -265,6 +289,13 @@ function ColumnGrid<T>({
 
   return (
     <div ref={containerRef} className="relative w-full" style={{ height: containerHeight }}>
+      {header != null && (
+        // Spans the packed columns; positioned with left/top like the leading tile so it is
+        // never a containing block for fixed descendants either.
+        <div key={HEADER_KEY} ref={getItemRef(HEADER_KEY)} className="absolute top-0 left-0">
+          {header}
+        </div>
+      )}
       {leading != null && (
         // Positioned with left/top (see relayout), and deliberately WITHOUT
         // transform/will-change so it never establishes a containing block that would trap
@@ -275,12 +306,16 @@ function ColumnGrid<T>({
       )}
       {items.map((item) => {
         const key = getKey(item);
+        const isUntrapped = untrappedKeys.has(key);
         return (
           <div
             key={key}
             ref={getItemRef(key)}
-            className="absolute top-0 left-0 transition-transform duration-200 ease-out motion-reduce:transition-none"
-            style={{ willChange: "transform" }}
+            className={cn(
+              "absolute top-0 left-0",
+              !isUntrapped && "transition-transform duration-200 ease-out motion-reduce:transition-none",
+            )}
+            style={isUntrapped ? undefined : { willChange: "transform" }}
           >
             {renderItem(item)}
           </div>

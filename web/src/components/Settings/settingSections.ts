@@ -1,8 +1,11 @@
 import {
+  ArrowLeftRightIcon,
   AstroidIcon,
   BarChart3Icon,
   CogIcon,
   DatabaseIcon,
+  FileCogIcon,
+  GaugeIcon,
   HeartHandshakeIcon,
   KeyIcon,
   KeyRoundIcon,
@@ -10,6 +13,7 @@ import {
   type LucideIcon,
   MailIcon,
   Settings2Icon,
+  SquarePenIcon,
   TagsIcon,
   UserIcon,
   UsersIcon,
@@ -18,8 +22,11 @@ import {
 import { type ComponentType } from "react";
 import AccessTokenSection from "@/components/Settings/AccessTokenSection";
 import AISection from "@/components/Settings/AISection";
+import ConfigurationSection from "@/components/Settings/ConfigurationSection";
+import EditorSection from "@/components/Settings/EditorSection";
 import InstanceSection from "@/components/Settings/InstanceSection";
 import MemberSection from "@/components/Settings/MemberSection";
+import MemoExportSection from "@/components/Settings/MemoExportSection";
 import MemoRelatedSettings from "@/components/Settings/MemoRelatedSettings";
 import MyAccountSection from "@/components/Settings/MyAccountSection";
 import NotificationSection from "@/components/Settings/NotificationSection";
@@ -29,24 +36,29 @@ import SpacesSection from "@/components/Settings/SpacesSection";
 import SSOSection from "@/components/Settings/SSOSection";
 import StorageSection from "@/components/Settings/StorageSection";
 import TagsSection from "@/components/Settings/TagsSection";
+import UsageLimitsSection from "@/components/Settings/UsageLimitsSection";
 import WebhookSection from "@/components/Settings/WebhookSection";
-import { InstanceSetting_Key } from "@/types/proto/api/v1/instance_service_pb";
+import { InstanceSetting_Key } from "@/types/proto/api/instance_service_pb";
 
 export type SettingSectionKey =
   | "my-account"
+  | "memo-export"
   | "spaces"
   | "access-token"
   | "preference"
+  | "editor"
   | "webhook"
   | "member"
   | "system"
   | "memo"
   | "storage"
+  | "usage-limits"
   | "notification"
   | "sso"
   | "tags"
   | "ai"
-  | "resource-stats";
+  | "resource-stats"
+  | "configuration";
 
 type SettingSectionScope = "basic" | "admin";
 
@@ -89,6 +101,13 @@ export const SETTINGS_SECTIONS: SettingSectionDefinition[] = [
     component: PreferencesSection,
   },
   {
+    key: "editor",
+    scope: "basic",
+    labelKey: "setting.editor.label",
+    icon: SquarePenIcon,
+    component: EditorSection,
+  },
+  {
     key: "webhook",
     scope: "basic",
     labelKey: "setting.webhook.label",
@@ -124,12 +143,26 @@ export const SETTINGS_SECTIONS: SettingSectionDefinition[] = [
     component: TagsSection,
   },
   {
+    key: "memo-export",
+    scope: "basic",
+    labelKey: "setting.memo-export.label",
+    icon: ArrowLeftRightIcon,
+    component: MemoExportSection,
+  },
+  {
     key: "storage",
     scope: "admin",
     labelKey: "setting.storage.label",
     icon: DatabaseIcon,
     component: StorageSection,
     preloadSettingKeys: [InstanceSetting_Key.STORAGE],
+  },
+  {
+    key: "usage-limits",
+    scope: "admin",
+    labelKey: "setting.usage-limits.label",
+    icon: GaugeIcon,
+    component: UsageLimitsSection,
   },
   {
     key: "notification",
@@ -160,6 +193,13 @@ export const SETTINGS_SECTIONS: SettingSectionDefinition[] = [
     labelKey: "setting.resource-stats.label",
     icon: BarChart3Icon,
     component: ResourceStatsSection,
+  },
+  {
+    key: "configuration",
+    scope: "admin",
+    labelKey: "setting.configuration.label",
+    icon: FileCogIcon,
+    component: ConfigurationSection,
   },
 ];
 

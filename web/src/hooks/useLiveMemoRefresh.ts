@@ -399,7 +399,7 @@ async function cancelResponseBody(response: Response): Promise<void> {
 }
 
 function fetchSSEStream(token: string, signal: AbortSignal): Promise<Response> {
-  return fetch("/api/v1/sse", {
+  return fetch("/api/sse", {
     headers: {
       Accept: "text/event-stream",
       Authorization: `Bearer ${token}`,
@@ -472,6 +472,8 @@ function handleSSEEvent(event: SSEChangeEvent, queryClient: ReturnType<typeof us
 
 function invalidateAllLiveQueries(queryClient: ReturnType<typeof useQueryClient>) {
   queryClient.invalidateQueries({ queryKey: spaceKeys.all, refetchType: "active" });
+  // Space invitations are delivered to the inbox and resolved with the same event.
+  queryClient.invalidateQueries({ queryKey: userKeys.notifications(), refetchType: "active" });
   invalidateLiveMemoQueries(queryClient);
 }
 

@@ -43,6 +43,8 @@ if [ "$FRONT_END" == "true" ]; then
 fi
 
 # Build Docker image
+BUILD_VERSION="$(bash scripts/release_version.sh development-version)"
+BUILD_COMMIT="$(git rev-parse HEAD)"
 echo "=== Building Docker Image ==="
 
 # Check if --multi-arch flag is provided for multi-arch build
@@ -68,13 +70,15 @@ if [ "$MULTI_ARCH" == "true" ]; then
     docker buildx build \
         --platform linux/amd64,linux/arm64 \
         -f scripts/Dockerfile \
+        --build-arg VERSION="$BUILD_VERSION" \
+        --build-arg COMMIT="$BUILD_COMMIT" \
         -t memos:canary \
         --load \
         .
 else
     # Build single architecture image
     echo "Building single architecture image..."
-    docker build -f scripts/Dockerfile -t memos:canary .
+    docker build --build-arg VERSION="$BUILD_VERSION" --build-arg COMMIT="$BUILD_COMMIT" -f scripts/Dockerfile -t memos:canary .
 fi
 
 echo "=== Build Complete ==="

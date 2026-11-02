@@ -3,7 +3,7 @@ import type { ReactNode } from "react";
 import { MemoryRouter, useLocation } from "react-router-dom";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import SpacesSection from "@/components/Settings/SpacesSection";
-import type { Space, SpaceInvitation, SpaceMember } from "@/types/proto/api/v1/space_service_pb";
+import type { Space, SpaceInvitation, SpaceMember } from "@/types/proto/api/space_service_pb";
 
 const state = vi.hoisted(() => ({
   viewerName: "users/alice",
@@ -69,7 +69,7 @@ vi.mock("@/components/CreateSpaceDialog", () => ({
           type="button"
           onClick={() => {
             const createdSpace: Space = {
-              $typeName: "memos.api.v1.Space",
+              $typeName: "memos.api.Space",
               name: "spaces/created",
               title: "Created",
               description: "",
@@ -118,7 +118,7 @@ vi.mock("@/utils/i18n", () => ({
 }));
 
 const adminSpace: Space = {
-  $typeName: "memos.api.v1.Space",
+  $typeName: "memos.api.Space",
   name: "spaces/product",
   title: "Product",
   description: "Product decisions",
@@ -132,26 +132,26 @@ const userSpace: Space = {
 };
 
 const adminMember: SpaceMember = {
-  $typeName: "memos.api.v1.SpaceMember",
+  $typeName: "memos.api.SpaceMember",
   name: "spaces/product/members/alice",
   user: "users/alice",
   role: 1,
 };
 
 const ordinaryMember: SpaceMember = {
-  $typeName: "memos.api.v1.SpaceMember",
+  $typeName: "memos.api.SpaceMember",
   name: "spaces/product/members/bob",
   user: "users/bob",
   role: 2,
 };
 
 const receivedInvitation: SpaceInvitation = {
-  $typeName: "memos.api.v1.SpaceInvitation",
+  $typeName: "memos.api.SpaceInvitation",
   name: "spaces/research/invitations/alice",
   invitee: "users/alice",
   role: 2,
   space: {
-    $typeName: "memos.api.v1.Space",
+    $typeName: "memos.api.Space",
     name: "spaces/research",
     title: "Research",
     description: "Research notes",
@@ -161,7 +161,7 @@ const receivedInvitation: SpaceInvitation = {
 };
 
 const pendingInvitation: SpaceInvitation = {
-  $typeName: "memos.api.v1.SpaceInvitation",
+  $typeName: "memos.api.SpaceInvitation",
   name: "spaces/product/invitations/carol",
   invitee: "users/carol",
   role: 2,
@@ -255,6 +255,40 @@ describe("SpacesSection", () => {
     expect(within(joinedSection!).getByTitle("joined-product")).toHaveTextContent("joined-product");
   });
 
+  it("saves the icon through the icon update mask", async () => {
+    state.spaces = [adminSpace];
+    state.members = [adminMember];
+    renderSection("/setting?space=spaces%2Fproduct#spaces");
+    fireEvent.click(screen.getByRole("button", { name: "space.icon.change" }));
+    fireEvent.click(await screen.findByRole("button", { name: "Leaf" }));
+    expect(state.updateSpace).not.toHaveBeenCalled();
+    fireEvent.click(screen.getByRole("button", { name: "setting.spaces.save-changes" }));
+    await waitFor(() =>
+      expect(state.updateSpace).toHaveBeenCalledWith({
+        space: expect.objectContaining({
+          name: adminSpace.name,
+          icon: expect.objectContaining({ value: { case: "lucide", value: "leaf" } }),
+        }),
+        updateMask: ["title", "description", "icon"],
+      }),
+    );
+  });
+
+  it("clears a saved icon with an explicit update mask", async () => {
+    state.spaces = [{ ...adminSpace, icon: { $typeName: "memos.api.Space.Icon", value: { case: "emoji", value: "🌱" } } }];
+    state.members = [adminMember];
+    renderSection("/setting?space=spaces%2Fproduct#spaces");
+    fireEvent.click(screen.getByRole("button", { name: "space.icon.change" }));
+    fireEvent.click(await screen.findByRole("button", { name: "space.icon.reset" }));
+    fireEvent.click(screen.getByRole("button", { name: "setting.spaces.save-changes" }));
+    await waitFor(() =>
+      expect(state.updateSpace).toHaveBeenCalledWith({
+        space: expect.objectContaining({ name: adminSpace.name, icon: undefined }),
+        updateMask: ["title", "description", "icon"],
+      }),
+    );
+  });
+
   it("shows governance controls to Space admins and cancels the exact pending invitation", async () => {
     state.spaces = [adminSpace];
     state.members = [adminMember, ordinaryMember];
@@ -301,6 +335,7 @@ describe("SpacesSection", () => {
     renderSection("/setting?space=spaces%2Fproduct#spaces");
 
     expect(screen.getByLabelText("common.name")).toHaveAttribute("readonly");
+    expect(screen.queryByRole("button", { name: "space.icon.change" })).not.toBeInTheDocument();
     expect(screen.queryByRole("button", { name: "setting.spaces.save-changes" })).not.toBeInTheDocument();
     expect(screen.queryByRole("button", { name: "setting.spaces.delete-space" })).not.toBeInTheDocument();
     expect(screen.getByRole("button", { name: "setting.spaces.leave-space" })).toBeInTheDocument();

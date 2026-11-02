@@ -1,62 +1,23 @@
-import dayjs from "dayjs";
-import isSameOrAfter from "dayjs/plugin/isSameOrAfter";
-import isSameOrBefore from "dayjs/plugin/isSameOrBefore";
 import type { MemoTimeBasis } from "@/contexts/ViewContext";
-import { useTranslate } from "@/utils/i18n";
-import { CELL_STYLES, INTENSITY_THRESHOLDS, MIN_COUNT, MONTHS_IN_YEAR } from "./constants";
-import type { CalendarData, CalendarDayCell } from "./types";
-
-dayjs.extend(isSameOrAfter);
-dayjs.extend(isSameOrBefore);
+import type { useTranslate } from "@/utils/i18n";
+import type { CalendarData } from "./types";
 
 export type TranslateFunction = ReturnType<typeof useTranslate>;
 
-export const getCellIntensityClass = (day: CalendarDayCell, maxCount: number): string => {
-  if (!day.isCurrentMonth || day.count === 0) {
-    return CELL_STYLES.EMPTY;
-  }
+/** Largest daily count in the data, floored at 1 so intensity ratios never divide by zero. */
+export const calculateMaxCount = (data: CalendarData): number => Math.max(1, ...Object.values(data));
 
-  const ratio = day.count / maxCount;
-  if (ratio > INTENSITY_THRESHOLDS.HIGH) return CELL_STYLES.HIGH;
-  if (ratio > INTENSITY_THRESHOLDS.MEDIUM) return CELL_STYLES.MEDIUM;
-  if (ratio > INTENSITY_THRESHOLDS.LOW) return CELL_STYLES.LOW;
-  return CELL_STYLES.MINIMAL;
-};
+/** 0 = no activity; 1–4 = the quarter of `maxCount` a day's count falls into, GitHub-heatmap style. */
+export type ActivityLevel = 0 | 1 | 2 | 3 | 4;
 
-export const getCalendarCellStateClass = (day: Pick<CalendarDayCell, "isSelected">): string =>
-  day.isSelected ? "z-10 ring-2 ring-blue-500/70 ring-inset" : "";
-
-export const generateMonthsForYear = (year: number): string[] => {
-  return Array.from({ length: MONTHS_IN_YEAR }, (_, i) => dayjs(`${year}-01-01`).add(i, "month").format("YYYY-MM"));
-};
-
-export const calculateMaxCount = (data: CalendarData): number => {
-  let max = 0;
-  for (const count of Object.values(data)) {
-    max = Math.max(max, count);
-  }
-  return Math.max(max, MIN_COUNT);
-};
-
-export const getMonthLabel = (month: string): string => {
-  return dayjs(month).format("MMM");
-};
-
-export const filterDataByYear = (data: Record<string, number>, year: number): Record<string, number> => {
-  if (!data) return {};
-
-  const filtered: Record<string, number> = {};
-  const yearStart = dayjs(`${year}-01-01`);
-  const yearEnd = dayjs(`${year}-12-31`);
-
-  for (const [dateStr, count] of Object.entries(data)) {
-    const date = dayjs(dateStr);
-    if (date.isSameOrAfter(yearStart, "day") && date.isSameOrBefore(yearEnd, "day")) {
-      filtered[dateStr] = count;
-    }
-  }
-
-  return filtered;
+/** `maxCount` is at least 1, as `calculateMaxCount` guarantees. */
+export const getActivityLevel = (count: number, maxCount: number): ActivityLevel => {
+  if (count <= 0) return 0;
+  const ratio = count / maxCount;
+  if (ratio > 0.75) return 4;
+  if (ratio > 0.5) return 3;
+  if (ratio > 0.25) return 2;
+  return 1;
 };
 
 export const getTooltipText = (count: number, date: string, t: TranslateFunction, timeBasis: MemoTimeBasis = "create_time"): string => {

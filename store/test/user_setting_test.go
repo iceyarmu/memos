@@ -397,7 +397,7 @@ func TestUserSettingGetUserByPATHashNotFound(t *testing.T) {
 
 	// Lookup non-existent PAT hash
 	result, err := ts.GetUserByPATHash(ctx, "non-existent-hash")
-	require.Error(t, err)
+	require.NoError(t, err)
 	require.Nil(t, result)
 
 	ts.Close()
@@ -413,12 +413,8 @@ func TestUserSettingGetUserByPATHashNoTokensKey(t *testing.T) {
 	// User exists but has no PERSONAL_ACCESS_TOKENS key at all
 	// This simulates fresh users or users upgraded from v0.25.3
 	result, err := ts.GetUserByPATHash(ctx, "any-hash")
-	require.Error(t, err)
+	require.NoError(t, err)
 	require.Nil(t, result)
-	// Error could be "PAT not found" (Postgres) or "sql: no rows in result set" (SQLite/MySQL)
-	require.True(t,
-		strings.Contains(err.Error(), "PAT not found") || strings.Contains(err.Error(), "no rows"),
-		"expected PAT not found or no rows error, got: %v", err)
 
 	// Now add a PAT for the user
 	pat := &storepb.PersonalAccessTokensUserSetting_PersonalAccessToken{
@@ -459,12 +455,8 @@ func TestUserSettingGetUserByPATHashEmptyTokensArray(t *testing.T) {
 
 	// Lookup should fail gracefully, not crash
 	result, err := ts.GetUserByPATHash(ctx, "any-hash")
-	require.Error(t, err)
+	require.NoError(t, err)
 	require.Nil(t, result)
-	// Error could be "PAT not found" (Postgres) or "sql: no rows in result set" (SQLite/MySQL)
-	require.True(t,
-		strings.Contains(err.Error(), "PAT not found") || strings.Contains(err.Error(), "no rows"),
-		"expected PAT not found or no rows error, got: %v", err)
 
 	ts.Close()
 }
@@ -515,7 +507,7 @@ func TestUserSettingGetUserByPATHashWithOtherUsers(t *testing.T) {
 
 	// Should not find non-existent hash even with mixed user states
 	result, err = ts.GetUserByPATHash(ctx, "non-existent")
-	require.Error(t, err)
+	require.NoError(t, err)
 	require.Nil(t, result)
 
 	ts.Close()
@@ -694,7 +686,7 @@ func TestUserSettingGetUserByPATHashAfterRemoval(t *testing.T) {
 
 	// Should no longer be found
 	result, err = ts.GetUserByPATHash(ctx, patHash)
-	require.Error(t, err)
+	require.NoError(t, err)
 	require.Nil(t, result)
 
 	ts.Close()
@@ -745,7 +737,7 @@ func TestUserSettingGetUserByPATHashLargeTokenCount(t *testing.T) {
 	// Create many PATs for the same user
 	tokenCount := 10
 	hashes := make([]string, tokenCount)
-	for i := 0; i < tokenCount; i++ {
+	for i := range tokenCount {
 		hashes[i] = "pat-hash-" + string(rune('A'+i)) + "-large-test"
 		err = ts.AddUserPersonalAccessToken(ctx, user.ID, &storepb.PersonalAccessTokensUserSetting_PersonalAccessToken{
 			TokenId:     "pat-large-" + string(rune('A'+i)),
@@ -763,6 +755,49 @@ func TestUserSettingGetUserByPATHashLargeTokenCount(t *testing.T) {
 		require.Equal(t, user.ID, result.UserID)
 		require.Equal(t, "pat-large-"+string(rune('A'+i)), result.PAT.TokenId)
 	}
+
+	ts.Close()
+}
+
+func TestUserSettingGetUserByPATHashCorruptRow(t *testing.T) {
+	t.Parallel()
+	ctx := context.Background()
+	ts := NewTestingStore(ctx, t)
+	user, err := createTestingHostUser(ctx, ts)
+	require.NoError(t, err)
+	other, err := createTestingUserWithRole(ctx, ts, "pat-corrupt-other", store.RoleUser)
+	require.NoError(t, err)
+
+	// A stored row the server cannot decode (lastUsedAt is not a timestamp).
+	const corruptHash = "pat-hash-corrupt"
+	_, err = ts.GetDriver().UpsertUserSetting(ctx, &store.UserSetting{
+		UserID: user.ID,
+		Key:    storepb.UserSetting_PERSONAL_ACCESS_TOKENS,
+		Value:  `{"tokens":[{"tokenId":"pat-corrupt","tokenHash":"` + corruptHash + `","lastUsedAt":""}]}`,
+	})
+	require.NoError(t, err)
+
+	// Looking up the corrupt token is a lookup failure, not a miss.
+	result, err := ts.GetUserByPATHash(ctx, corruptHash)
+	require.Error(t, err)
+	require.Nil(t, result)
+
+	// Other users' tokens still resolve.
+	const otherHash = "pat-hash-other-healthy"
+	err = ts.AddUserPersonalAccessToken(ctx, other.ID, &storepb.PersonalAccessTokensUserSetting_PersonalAccessToken{
+		TokenId:   "pat-other",
+		TokenHash: otherHash,
+	})
+	require.NoError(t, err)
+	result, err = ts.GetUserByPATHash(ctx, otherHash)
+	require.NoError(t, err)
+	require.NotNil(t, result)
+	require.Equal(t, other.ID, result.UserID)
+
+	// An unknown hash is still a plain miss.
+	result, err = ts.GetUserByPATHash(ctx, "pat-hash-unknown")
+	require.NoError(t, err)
+	require.Nil(t, result)
 
 	ts.Close()
 }
@@ -818,6 +853,40 @@ func TestUserSettingMultipleSettingTypes(t *testing.T) {
 	patsSetting, err := ts.GetUserSetting(ctx, &store.FindUserSetting{UserID: &user.ID, Key: storepb.UserSetting_PERSONAL_ACCESS_TOKENS})
 	require.NoError(t, err)
 	require.Len(t, patsSetting.GetPersonalAccessTokens().Tokens, 1)
+
+	ts.Close()
+}
+
+func TestUserSettingEditor(t *testing.T) {
+	t.Parallel()
+	ctx := context.Background()
+	ts := NewTestingStore(ctx, t)
+	user, err := createTestingHostUser(ctx, ts)
+	require.NoError(t, err)
+
+	_, err = ts.UpsertUserSetting(ctx, &storepb.UserSetting{
+		UserId: user.ID,
+		Key:    storepb.UserSetting_EDITOR,
+		Value:  &storepb.UserSetting_Editor{Editor: &storepb.EditorUserSetting{SourceMode: true}},
+	})
+	require.NoError(t, err)
+
+	setting, err := ts.GetUserSetting(ctx, &store.FindUserSetting{UserID: &user.ID, Key: storepb.UserSetting_EDITOR})
+	require.NoError(t, err)
+	require.NotNil(t, setting)
+	require.True(t, setting.GetEditor().GetSourceMode())
+
+	_, err = ts.UpsertUserSetting(ctx, &storepb.UserSetting{
+		UserId: user.ID,
+		Key:    storepb.UserSetting_EDITOR,
+		Value:  &storepb.UserSetting_Editor{Editor: &storepb.EditorUserSetting{SourceMode: false}},
+	})
+	require.NoError(t, err)
+
+	setting, err = ts.GetUserSetting(ctx, &store.FindUserSetting{UserID: &user.ID, Key: storepb.UserSetting_EDITOR})
+	require.NoError(t, err)
+	require.NotNil(t, setting)
+	require.False(t, setting.GetEditor().GetSourceMode())
 
 	ts.Close()
 }
@@ -939,21 +1008,27 @@ func TestUserMemoViewConcurrentPartialUpdates(t *testing.T) {
 		Id:     "work",
 		Title:  "Original title",
 		Filter: `tag in ["original"]`,
+		Icon:   &storepb.MemoViewsUserSetting_MemoView_Icon{Value: &storepb.MemoViewsUserSetting_MemoView_Icon_Emoji{Emoji: "🌱"}},
 	}))
 
 	updatedTitle := "Updated title"
 	updatedFilter := `tag in ["updated"]`
 	var wg sync.WaitGroup
-	errs := make([]error, 2)
+	errs := make([]error, 3)
 	start := make(chan struct{})
 
 	wg.Go(func() {
 		<-start
-		_, errs[0] = ts.UpdateUserMemoView(ctx, user.ID, "work", &updatedTitle, nil)
+		_, errs[0] = ts.UpdateUserMemoView(ctx, user.ID, "work", &updatedTitle, nil, nil)
 	})
 	wg.Go(func() {
 		<-start
-		_, errs[1] = ts.UpdateUserMemoView(ctx, user.ID, "work", nil, &updatedFilter)
+		_, errs[1] = ts.UpdateUserMemoView(ctx, user.ID, "work", nil, &updatedFilter, nil)
+	})
+	wg.Go(func() {
+		<-start
+		icon := &storepb.MemoViewsUserSetting_MemoView_Icon{Value: &storepb.MemoViewsUserSetting_MemoView_Icon_Lucide{Lucide: "leaf"}}
+		_, errs[2] = ts.UpdateUserMemoView(ctx, user.ID, "work", nil, nil, &icon)
 	})
 	close(start)
 	wg.Wait()
@@ -961,11 +1036,14 @@ func TestUserMemoViewConcurrentPartialUpdates(t *testing.T) {
 		require.NoError(t, err)
 	}
 
+	_, err = ts.ListUserSettings(ctx, &store.FindUserSetting{UserID: &user.ID, Key: storepb.UserSetting_MEMO_VIEWS})
+	require.NoError(t, err)
 	memoViews, err := ts.GetUserMemoViews(ctx, user.ID)
 	require.NoError(t, err)
 	require.Len(t, memoViews, 1)
 	require.Equal(t, updatedTitle, memoViews[0].GetTitle())
 	require.Equal(t, updatedFilter, memoViews[0].GetFilter())
+	require.Equal(t, "leaf", memoViews[0].GetIcon().GetLucide())
 }
 
 func TestGetUserMemoViewsReturnsCopies(t *testing.T) {
@@ -980,17 +1058,20 @@ func TestGetUserMemoViewsReturnsCopies(t *testing.T) {
 		Id:     "work",
 		Title:  "Original title",
 		Filter: `tag in ["original"]`,
+		Icon:   &storepb.MemoViewsUserSetting_MemoView_Icon{Value: &storepb.MemoViewsUserSetting_MemoView_Icon_Emoji{Emoji: "🌱"}},
 	}))
 
 	firstRead, err := ts.GetUserMemoViews(ctx, user.ID)
 	require.NoError(t, err)
 	require.Len(t, firstRead, 1)
 	firstRead[0].Title = "Mutated title"
+	firstRead[0].Icon.Value = &storepb.MemoViewsUserSetting_MemoView_Icon_Lucide{Lucide: "leaf"}
 
 	secondRead, err := ts.GetUserMemoViews(ctx, user.ID)
 	require.NoError(t, err)
 	require.Len(t, secondRead, 1)
 	require.Equal(t, "Original title", secondRead[0].GetTitle())
+	require.Equal(t, "🌱", secondRead[0].GetIcon().GetEmoji())
 }
 
 func TestUserSettingMemoViewsPartialUpdate(t *testing.T) {

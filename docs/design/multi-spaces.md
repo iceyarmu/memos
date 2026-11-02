@@ -1,6 +1,6 @@
 # Multi-Spaces Design
 
-Status: Accepted
+Status: Implemented
 
 Date: 2026-08-23
 
@@ -70,7 +70,7 @@ These sources establish product mechanics, not demand or prevalence. This resear
 - A reaction belongs to one memo and has no independent audience.
 - A Space invitation is a pending offer to one existing active registered user with a selected `ADMIN` or `USER` role. It grants no Space access before that user accepts it.
 - A Space membership is an accepted relationship between one active registered user and one Space with role `ADMIN` or `USER`. The creator becomes the first `ADMIN`; there is no permanent owner.
-- Application `ADMIN` is a control-plane role and is not an implicit Space member or memo reader.
+- Application `ADMIN` is the instance superuser. On any named memo operation it passes every memo-local authorization check: authorship, audience, Space membership and participation, attachment and reaction ownership. Structural validity still applies, and collection listings keep the audience predicate, so an administrator's feeds never surface other users' private memos. It is not an implicit Space member for Space browsing or governance.
 
 ### Read access and distribution
 
@@ -87,14 +87,16 @@ Space placement adds no additional read gate. In particular, an active non-membe
 
 An unexpired bearer share is an explicit capability exception for one exact memo. It does not grant list, feed, Space, or related-memo access.
 
+An application `ADMIN` may read any structurally valid memo by name, including archived memos and memos with the `SPACE` audience in Spaces they do not belong to. This bypass applies to point reads and their child resources (files, reactions, relations, comment creation) only. Lists, counts, feeds, and the Space filter keep the ordinary predicate, so an administrator's Explore and Space feeds show exactly what a regular user with the same memberships would see.
+
 Distribution is derived rather than separately configured:
 
 - Global feeds return readable memos that do not have a `COMMENT` relation.
 - A Space feed first requires active membership, then returns readable memos assigned to that Space that do not have a `COMMENT` relation. Membership does not make another author's assigned `PRIVATE` memo readable.
 - Direct memo reads evaluate each memo independently, including comments.
 - A comment or conversation query requires its context memo to be readable, then filters every replying memo by that memo's own audience.
-- A `COMMENT` or `REFERENCE` relation and its snippet are returned only when both endpoints are readable.
-- Reactions are readable whenever their memo is readable.
+- A `COMMENT` or `REFERENCE` relation and its snippet are returned only when both endpoints are readable. A readable comment's `parent` field still identifies its context memo; this identity does not grant access. Clients fetch it independently and render an unavailable context on permission denial or not-found. Bearer-share responses omit this field.
+- Reactions are readable whenever their memo is readable. An active reaction creator can withdraw their own reaction even after losing memo access or Space membership.
 - Public profiles and other public surfaces continue to use `PUBLIC`, not Space placement.
 
 ### Participation and governance
@@ -115,6 +117,7 @@ Reading and participation are separate. A caller may read an assigned `PUBLIC` o
 | Edit content or audience; manage attachments, references, or shares | Memo author; if assigned, the author is also an active member of its Space. |
 | Delete one memo | Memo author. This does not delete another memo. |
 | Withdraw or move a memo | Memo author. Source membership is unnecessary; target membership is required. |
+| Any named memo operation above, on any memo | Application `ADMIN`, as superuser. Membership is not required; the placement and any target Space must still exist. An attachment a superuser adds stays owned by the administrator; because removal deletes the file, only its owner or an administrator removes it, and memo deletion still removes it. |
 | Hard-delete a Space | Space `ADMIN`. |
 
 Any membership change or user archival that would leave a Space without an active `ADMIN` is rejected.
@@ -137,6 +140,10 @@ General account erasure remains deferred. As a fail-closed guard, user hard dele
 
 ### Persistence and migration
 
+Historical upgrade scripts are now provided by the v0.31.0 release, with the
+current binary retaining the fresh-install schemas. See the
+[database migration baseline](../../store/migration/README.md).
+
 ```text
 space(id, uid, title, description)
 space_member(space_id, user_id, status INVITED | ACTIVE, role ADMIN | USER)
@@ -148,9 +155,9 @@ The Space-user pair is unique and represents one current relationship slot. `INV
 
 `status` is required and has no default or database `CHECK`; Store logic writes and recognizes `INVITED` and `ACTIVE`, while unknown values fail closed in authorization queries. The existing role constraint remains unchanged. The initial version does not record inviter, invitation, Space, or membership timestamps; they can be added when a concrete attribution, expiration, audit, or ordering requirement exists. A nullable `memo.space_id` directly enforces zero-or-one placement; an association table is unnecessary. Existing `memo_relation` rows remain the source of truth for comments.
 
-The change ships in migration `0.31` for SQLite, MySQL, and PostgreSQL, with equivalent fresh-install schemas. Existing membership rows are backfilled to `ACTIVE`. Existing memos keep their UID, author, visibility, relations, permalink, and become Unassigned. Comment rows and comment visibility are not rewritten. SQLite rebuilds the affected tables where its `ALTER TABLE` support requires it.
+The change shipped in v0.31.0, migration `0.31` for SQLite, MySQL, and PostgreSQL, with equivalent fresh-install schemas. Existing membership rows are backfilled to `ACTIVE`. Existing memos keep their UID, author, visibility, relations, permalink, and become Unassigned. Comment rows and comment visibility are not rewritten. SQLite rebuilds the affected tables where its `ALTER TABLE` support requires it.
 
-Space creation, invitation transitions, membership changes, placement and audience changes, comment creation, memo deletion, and Space deletion use ordinary transactions where partial application would corrupt directly affected data. On MySQL and PostgreSQL, operations that create or activate a Space relationship serialize with user deletion on the target user row, and invitation creation serializes with Space deletion on the Space row. This prevents a concurrent delete from leaving an orphaned active membership or invitation. Space deletion directly removes assigned memos and their owned rows in the same style as existing user deletion, then uses the existing best-effort attachment storage cleanup after commit. The initial version does not introduce general transaction retries, a cleanup queue, or a global concurrency framework.
+Space creation, invitation transitions, membership changes, placement and audience changes, comment creation, memo deletion, and Space deletion use ordinary transactions where partial application would corrupt directly affected data. On MySQL and PostgreSQL, operations that create or activate a Space relationship serialize with user deletion on the target user row, and invitation creation serializes with Space deletion on the Space row. On SQLite every store transaction begins `IMMEDIATE`, so a transaction that has read a parent row holds the single write lock until it ends and a concurrent delete waits rather than committing underneath it. This prevents a concurrent delete from leaving an orphaned active membership or invitation. Space deletion directly removes assigned memos and their owned rows in the same style as existing user deletion, then uses the existing best-effort attachment storage cleanup after commit. The initial version does not introduce general transaction retries, a cleanup queue, or a global concurrency framework.
 
 ### API shape
 
@@ -162,21 +169,23 @@ Space responses returned through membership-authorized operations include the au
 
 Memo responses gain an optional Space resource name, and `Visibility` adds `SPACE = 4` without renumbering existing values. The domain-to-v1 mapping is Author to `PRIVATE`, Instance to `PROTECTED`, Public to `PUBLIC`, and Space to `SPACE`. `VISIBILITY_UNSPECIFIED` remains an input sentinel: create treats it as `PRIVATE`, an explicit visibility update rejects it, and responses never return it. Visibility values are named domains and must not be compared numerically. The global default memo visibility setting continues to accept only `PRIVATE`, `PROTECTED`, and `PUBLIC`, because it cannot identify a Space.
 
-Memo listing gains explicit all-readable, Unassigned, and Space scopes. Space scope requires active membership. Existing global and Space feeds exclude comments by default, and Space identity is not added to the CEL filter schema.
+Memo listing expresses placement through the CEL filter: `space == "spaces/{space}"` selects one Space, `space == null` selects Unassigned memos, and `space != null` selects every placed memo. Membership is enforced by the read policy, which the filter can only narrow. Saved views accept the same expressions. Existing global and Space feeds exclude comments by default.
 
 Placement and audience use the existing memo update mechanism so the memo author can change them atomically. The Space API does not add an operation for an `ADMIN` to move, withdraw, or otherwise mutate an individual memo.
 
-MCP memo operations reuse the same memo policy; Space management is not exposed through MCP in the initial version.
+MCP memo operations reuse the same memo policy. The Space service is exposed through MCP as the `space_*` tools, which run in-process against the same REST bindings and therefore the same membership authorization; see `server/mcp/README.md`.
 
 ### UI shape
 
 The active Space scopes collaborative resource browsing and creation, including Home, Explore, and attachment lists. Archived, Inbox, and user profiles remain user-global and their routes do not inherit the active Space. Global Settings provides a Spaces section for viewing received invitations and managing joined Spaces, metadata, members, roles, and pending invitations; it is a management surface rather than another Space switcher.
 
+Creating an invitation also delivers a `SPACE_INVITATION` inbox notification to the invitee, with the same email dispatch as memo notifications when email is enabled. The notification carries the read-only Space summary and offered role, and the invitee can accept or decline from the Inbox. Accepting archives the notification and keeps it as history while the membership is active; declining or revoking deletes it. At read time the notification fails closed: it is omitted unless the receiver still holds the pending invitation or is an active member of the Space, so a deleted Space or a revoked offer leaks no metadata.
+
 ### Security invariants
 
-Before `SPACE` can be stored, one shared, memo-local, fail-closed policy must cover point reads, lists and counts, files, reactions, relations, notifications, email, webhooks, shares, search, statistics, public feeds, and MCP. Child resources resolve the memo they directly belong to. Application `ADMIN` receives no implicit bypass.
+Before `SPACE` can be stored, one shared, memo-local, fail-closed policy must cover point reads, lists and counts, files, reactions, relations, notifications, email, webhooks, shares, search, statistics, public feeds, and MCP. Child resources resolve the memo they directly belong to. Application `ADMIN` bypasses only the memo-local checks on named operations; drivers resolve the actor's role inside the mutation transaction alongside the actor's lifecycle state, and an archived administrator holds no privilege.
 
-Unknown visibility denies access. A missing or invalid placement denies `SPACE` reads and placement-dependent operations. Other audiences continue to govern ordinary reads, but an invalid Space identity is omitted. Inactive users, pending invitations, unknown relationship states, and invalid membership roles deny any access that depends on them. Every membership authorization requires `status = ACTIVE` and role `ADMIN` or `USER`. Where the database supports row locks, relationship creation and activation serialize against user deletion, and invitation creation serializes against Space deletion. Database list and count authorization is applied before pagination:
+Unknown visibility denies access. A missing or invalid placement denies `SPACE` reads and placement-dependent operations. Other audiences continue to govern ordinary reads, but an invalid Space identity is omitted. Inactive users, pending invitations, unknown relationship states, and invalid membership roles deny any access that depends on them. Every membership authorization requires `status = ACTIVE` and role `ADMIN` or `USER`. Where the database supports row locks, relationship creation and activation serialize against user deletion, and invitation creation serializes against Space deletion; on SQLite the same serialization comes from `IMMEDIATE` transactions. Database list and count authorization is applied before pagination:
 
 ```text
 PRIVATE + active authenticated author
@@ -206,11 +215,11 @@ Files for `PRIVATE`, `PROTECTED`, and `SPACE` memos use `private, no-store`; pub
 | Follow relations during Space deletion | Rejected; relations cannot extend deletion into other Spaces or Unassigned content. |
 | Move or delete a member's memos when membership ends | Rejected; historical contributions remain until an author lifecycle action or Space deletion. |
 | Give a Space `ADMIN` a separate operation to evict or otherwise mutate one memo | Rejected; placement belongs to the memo author's lifecycle, while Space governance is limited to Space metadata, membership, and aggregate hard deletion. |
-| Give application `ADMIN` implicit Space or memo access | Rejected; moderation and recovery require separate control-plane design. |
+| Give application `ADMIN` implicit Space or memo access | Revised on 2026-09-17: application `ADMIN` is the superuser for named memo operations, without becoming an implicit Space member for browsing or governance. Collection listings are unchanged. |
 | Let a Space `ADMIN` directly create an active membership | Rejected; only the invited user can turn a pending offer into membership. |
 | Add a separate invitation table now | Rejected for this iteration because the relationship state fits the unique Space-user slot and the design intentionally omits history, expiration, and delivery credentials. Revisit when those requirements appear. |
 | Rename v1 `visibility` to `audience`, or expose both fields | Rejected; the domain term is Audience, while one legacy v1 field remains the compatibility representation. |
 
 ## Deferred design
 
-Email and external-user invitations, invitation expiration, inviter attribution, invitation history, open enrollment, account erasure beyond the membership guard, notification delivery and retention policy, application-admin moderation and recovery, audit history, soft deletion, restoration, retryable external-object cleanup, delivery-time cancellation of queued email/webhooks, broader concurrent-mutation hardening, and asynchronous deletion of very large Spaces remain deferred. Later work must preserve invitee consent, independent memo authorization, non-propagating relations, and explicit Space aggregate deletion unless this design is revisited.
+Email and external-user invitations, invitation expiration, inviter attribution, invitation history, open enrollment, account erasure beyond the membership guard, notification retention policy and per-user notification preferences, collaborative editing by Space members, audit history, soft deletion, restoration, retryable external-object cleanup, delivery-time cancellation of queued email/webhooks, broader concurrent-mutation hardening, and asynchronous deletion of very large Spaces remain deferred. Later work must preserve invitee consent, independent memo authorization, non-propagating relations, and explicit Space aggregate deletion unless this design is revisited.

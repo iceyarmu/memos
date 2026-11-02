@@ -7,32 +7,53 @@ import (
 	"net"
 	"net/http"
 	"os"
+	"path"
+	"sync"
 	"time"
 	"uuid"
 
-	"github.com/labstack/echo/v5"
-	"github.com/labstack/echo/v5/middleware"
 	"github.com/pkg/errors"
 
+	"github.com/usememos/memos/core/memopayload"
+	"github.com/usememos/memos/internal/clientip"
+	"github.com/usememos/memos/internal/httphandler"
 	"github.com/usememos/memos/internal/profile"
 	storepb "github.com/usememos/memos/proto/gen/store"
-	apiv1 "github.com/usememos/memos/server/router/api/v1"
-	"github.com/usememos/memos/server/router/fileserver"
-	"github.com/usememos/memos/server/router/frontend"
-	"github.com/usememos/memos/server/router/mcp"
+	"github.com/usememos/memos/server/api"
+	"github.com/usememos/memos/server/fileserver"
+	"github.com/usememos/memos/server/frontend"
+	"github.com/usememos/memos/server/mcp"
 	"github.com/usememos/memos/store"
 )
 
-const shutdownTimeout = 10 * time.Second
+const (
+	shutdownTimeout = 10 * time.Second
+
+	// readHeaderTimeout bounds how long a client may take to send request
+	// headers, so idle or slow connections cannot pin a worker forever. Bodies
+	// and responses are not bounded here: uploads and SSE streams are
+	// legitimately long, and the request context still ends on disconnect.
+	readHeaderTimeout = 15 * time.Second
+	// idleTimeout closes keep-alive connections that send nothing.
+	idleTimeout = 2 * time.Minute
+)
+
+// healthzDatabaseTimeout bounds the database ping behind /healthz.
+const healthzDatabaseTimeout = 2 * time.Second
 
 type Server struct {
 	Secret  string
 	Profile *profile.Profile
 	Store   *store.Store
 
-	echoServer *echo.Echo
+	handler    http.Handler
 	httpServer *http.Server
-	sseHub     *apiv1.SSEHub
+	apiService *api.APIService
+
+	// backgroundCancel stops the startup jobs, and backgroundJobs waits for
+	// them, before the store closes.
+	backgroundCancel context.CancelFunc
+	backgroundJobs   sync.WaitGroup
 }
 
 func NewServer(ctx context.Context, profile *profile.Profile, store *store.Store) (*Server, error) {
@@ -41,10 +62,13 @@ func NewServer(ctx context.Context, profile *profile.Profile, store *store.Store
 		Profile: profile,
 	}
 
-	echoServer := echo.New()
-	echoServer.Use(middleware.Recover())
-	echoServer.Use(newCORSMiddleware(profile))
-	s.echoServer = echoServer
+	mux := http.NewServeMux()
+	// Resolve the client address once per request, before anything that keys
+	// on it: rate limits, session records, and the file server.
+	clientIPResolver, err := clientip.ParseTrustedProxies(profile.TrustedProxies)
+	if err != nil {
+		return nil, errors.Wrap(err, "invalid trusted proxies")
+	}
 
 	instanceBasicSetting, err := s.getOrUpsertInstanceBasicSetting(ctx)
 	if err != nil {
@@ -57,32 +81,49 @@ func NewServer(ctx context.Context, profile *profile.Profile, store *store.Store
 	}
 	s.Secret = secret
 
-	// Register healthz endpoint.
-	echoServer.GET("/healthz", func(c *echo.Context) error {
-		return c.String(http.StatusOK, "Service ready.")
-	})
+	// Register healthz endpoint. It reports ready only while the database
+	// answers, so a load balancer stops routing to an instance that lost it.
+	mux.Handle("/healthz", httphandler.GET(httphandler.Func(func(w http.ResponseWriter, r *http.Request) error {
+		pingCtx, cancel := context.WithTimeout(r.Context(), healthzDatabaseTimeout)
+		defer cancel()
+		if err := s.Store.GetDriver().GetDB().PingContext(pingCtx); err != nil {
+			slog.Warn("health check failed to reach the database", slog.String("error", err.Error()))
+			return httphandler.Text(w, http.StatusServiceUnavailable, "Database unavailable.")
+		}
+		return httphandler.Text(w, http.StatusOK, "Service ready.")
+	}), nil))
 
-	// Serve frontend static files.
-	frontend.NewFrontendService(profile, store).Serve(ctx, echoServer)
+	apiService := api.NewAPIService(s.Secret, profile, store)
+	s.apiService = apiService
 
-	apiV1Service := apiv1.NewAPIV1Service(s.Secret, profile, store)
-	s.sseHub = apiV1Service.SSEHub
-
-	// Register HTTP file server routes BEFORE gRPC-Gateway to ensure proper range request handling for Safari.
-	// This uses native HTTP serving (http.ServeContent) instead of gRPC for video/audio files.
-	fileServerService := fileserver.NewFileServerService(s.Profile, s.Store, s.Secret)
-	fileServerService.RegisterRoutes(echoServer)
-
-	// Register gRPC gateway as api v1 (includes SSE endpoint on CORS-enabled group).
-	if err := apiV1Service.RegisterGateway(ctx, echoServer); err != nil {
-		return nil, errors.Wrap(err, "failed to register gRPC gateway")
+	apiHandler, err := apiService.NewHandler(ctx)
+	if err != nil {
+		return nil, errors.Wrap(err, "failed to create API handler")
 	}
+	frontendService := frontend.NewFrontendService(profile, store)
+	frontendService.Serve(ctx, mux, apiHandler)
+	fileServerService := fileserver.NewFileServerService(s.Profile, s.Store, s.Secret)
+	fileServerService.MemoExporter = apiService
+	fileServerService.RateLimiter = apiService.RateLimiter
+	fileServerService.RegisterRoutes(mux, apiHandler)
+	// Preserve unclean-path routing without ServeMux's automatic redirects.
+	fallback := frontendService.Handler(apiHandler)
+	router := http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		frontend.SetCacheHeaders(w, r)
+		routingRequest := httphandler.RoutingRequest(r)
+		if path.Clean(routingRequest.URL.Path) != routingRequest.URL.Path && routingRequest.URL.Path != "/" {
+			fallback.ServeHTTP(w, r)
+			return
+		}
+		mux.ServeHTTP(w, routingRequest)
+	})
+	s.handler = httphandler.Recover(clientip.Middleware(clientIPResolver)(newCORSMiddleware(profile, mux)(router)))
 
-	mcpService, err := mcp.NewMCPService(profile, echoServer)
+	mcpService, err := mcp.NewMCPService(profile, s.handler)
 	if err != nil {
 		return nil, errors.Wrap(err, "failed to create MCP service")
 	}
-	mcpService.RegisterRoutes(echoServer)
+	mcpService.RegisterRoutes(mux)
 
 	return s, nil
 }
@@ -108,15 +149,39 @@ func (s *Server) Start() error {
 		}
 	}
 
-	// Start Echo server directly (no cmux needed - all traffic is HTTP).
-	s.httpServer = &http.Server{Handler: s.echoServer}
+	// All transports share the standard HTTP server.
+	s.httpServer = &http.Server{
+		Handler:           s.handler,
+		ReadHeaderTimeout: readHeaderTimeout,
+		IdleTimeout:       idleTimeout,
+	}
 	go func() {
 		if err := s.httpServer.Serve(listener); err != nil && err != http.ErrServerClosed {
-			slog.Error("failed to start echo server", "error", err)
+			slog.Error("failed to start HTTP server", "error", err)
 		}
 	}()
 
+	s.startBackgroundJobs()
 	return nil
+}
+
+// startBackgroundJobs runs one-off data jobs that must not delay serving.
+func (s *Server) startBackgroundJobs() {
+	ctx, cancel := context.WithCancel(context.Background())
+	s.backgroundCancel = cancel
+	runner := memopayload.NewRunner(s.Store, s.apiService.MarkdownService)
+	s.backgroundJobs.Go(func() {
+		if err := runner.Backfill(ctx); err != nil && ctx.Err() == nil {
+			slog.Error("failed to rebuild memo payloads; retrying on next start", slog.String("error", err.Error()))
+		}
+	})
+}
+
+func (s *Server) stopBackgroundJobs() {
+	if s.backgroundCancel != nil {
+		s.backgroundCancel()
+	}
+	s.backgroundJobs.Wait()
 }
 
 func (s *Server) Shutdown(ctx context.Context) {
@@ -127,6 +192,8 @@ func (s *Server) Shutdown(ctx context.Context) {
 
 	s.closeLongLivedConnections()
 	s.shutdownHTTPServer(ctx)
+	s.apiService.CloseUploads()
+	s.stopBackgroundJobs()
 
 	// Close database connection.
 	if err := s.Store.Close(); err != nil {
@@ -138,9 +205,7 @@ func (s *Server) Shutdown(ctx context.Context) {
 
 func (s *Server) closeLongLivedConnections() {
 	// Long-lived SSE requests do not finish on their own during http.Server.Shutdown.
-	if s.sseHub != nil {
-		s.sseHub.Close()
-	}
+	s.apiService.SSEHub.Close()
 }
 
 func (s *Server) shutdownHTTPServer(ctx context.Context) {

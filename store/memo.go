@@ -3,10 +3,12 @@ package store
 import (
 	"context"
 	"database/sql"
-	"errors"
+	"encoding/json"
 
-	"github.com/usememos/memos/internal/base"
+	"github.com/pkg/errors"
+	"google.golang.org/protobuf/encoding/protojson"
 
+	"github.com/usememos/memos/internal/identifier"
 	storepb "github.com/usememos/memos/proto/gen/store"
 )
 
@@ -105,6 +107,38 @@ type FindMemoPayload struct {
 	HasIncompleteTasks bool
 }
 
+// RefreshMemoDerivedPayload replaces the content-derived part of a memo's
+// payload, its tags and property, computed from Content.
+type RefreshMemoDerivedPayload struct {
+	ID int32
+	// Content is the memo content the tags and property were computed from.
+	// The refresh applies only while the stored content still equals it.
+	Content  string
+	Tags     []string
+	Property *storepb.MemoPayload_Property
+}
+
+// JSON returns the tags and property encoded the way memo payloads are stored.
+func (r *RefreshMemoDerivedPayload) JSON() (tags string, property string, err error) {
+	tagList := r.Tags
+	if tagList == nil {
+		tagList = []string{}
+	}
+	tagBytes, err := json.Marshal(tagList)
+	if err != nil {
+		return "", "", errors.Wrap(err, "failed to marshal memo tags")
+	}
+	prop := r.Property
+	if prop == nil {
+		prop = &storepb.MemoPayload_Property{}
+	}
+	propertyBytes, err := protojson.Marshal(prop)
+	if err != nil {
+		return "", "", errors.Wrap(err, "failed to marshal memo property")
+	}
+	return string(tagBytes), string(propertyBytes), nil
+}
+
 type UpdateMemo struct {
 	ID         int32
 	UID        *string
@@ -137,9 +171,28 @@ type MemoWritePolicy struct {
 	CreatingShare bool
 }
 
+// MemoActorState is the actor's user row state as read inside a mutation
+// transaction. Admin marks an active instance administrator; see
+// access.IsInstanceAdmin for what that grants. A missing user is the zero
+// value.
+type MemoActorState struct {
+	Active bool
+	Admin  bool
+}
+
+// NewMemoActorState derives the actor state from a user row. An archived
+// administrator is neither active nor privileged.
+func NewMemoActorState(rowStatus RowStatus, role Role) MemoActorState {
+	active := rowStatus == Normal
+	return MemoActorState{Active: active, Admin: active && role == RoleAdmin}
+}
+
 // MemoWriteSnapshot is the current database state used to validate a
 // MemoWritePolicy. Driver packages populate it in the mutation transaction.
 type MemoWriteSnapshot struct {
+	// ActorIsAdmin is true when the policy actor is an active instance
+	// administrator. It bypasses authorship and membership checks only.
+	ActorIsAdmin       bool
 	CreatorID          int32
 	RowStatus          RowStatus
 	SpaceID            *int32
@@ -194,7 +247,7 @@ func validateMemoCreate(create *Memo) error {
 	if create == nil {
 		return errors.New("memo is required")
 	}
-	if !base.UIDMatcher.MatchString(create.UID) {
+	if !identifier.UIDMatcher.MatchString(create.UID) {
 		return errors.New("invalid uid")
 	}
 	if !isValidVisibility(create.Visibility) {
@@ -208,6 +261,12 @@ func validateMemoCreate(create *Memo) error {
 
 func (s *Store) ListMemos(ctx context.Context, find *FindMemo) ([]*Memo, error) {
 	return s.driver.ListMemos(ctx, find)
+}
+
+// CountUserMemos counts the memos a user created, comments included, in every
+// row status and Space.
+func (s *Store) CountUserMemos(ctx context.Context, creatorID int32) (int64, error) {
+	return s.driver.CountUserMemos(ctx, creatorID)
 }
 
 func (s *Store) GetMemo(ctx context.Context, find *FindMemo) (*Memo, error) {
@@ -224,7 +283,7 @@ func (s *Store) GetMemo(ctx context.Context, find *FindMemo) (*Memo, error) {
 }
 
 func (s *Store) UpdateMemo(ctx context.Context, update *UpdateMemo) error {
-	if update.UID != nil && !base.UIDMatcher.MatchString(*update.UID) {
+	if update.UID != nil && !identifier.UIDMatcher.MatchString(*update.UID) {
 		return errors.New("invalid uid")
 	}
 	if update.Visibility != nil && !isValidVisibility(*update.Visibility) {
@@ -240,6 +299,15 @@ func (s *Store) UpdateMemo(ctx context.Context, update *UpdateMemo) error {
 		return s.driver.UpdateMemo(ctx, update)
 	}
 	return s.driver.UpdateMemo(ctx, update)
+}
+
+// RefreshMemoDerivedPayload rewrites a memo's payload tags and property in
+// place, and only if the memo's content has not changed since it was read. It
+// leaves every other payload field, such as the location, and updated_ts as
+// they are, so a background rebuild can never undo a concurrent edit. A memo
+// that was edited or deleted in the meantime is left alone.
+func (s *Store) RefreshMemoDerivedPayload(ctx context.Context, refresh *RefreshMemoDerivedPayload) error {
+	return s.driver.RefreshMemoDerivedPayload(ctx, refresh)
 }
 
 func validateMemoWritePolicy(policy *MemoWritePolicy) error {
@@ -264,7 +332,10 @@ func ValidateMemoWriteSnapshot(policy *MemoWritePolicy, update *UpdateMemo, snap
 	if policy == nil || snapshot == nil {
 		return errors.New("memo write policy snapshot is required")
 	}
-	if snapshot.CreatorID != policy.ActorUserID {
+	// An instance administrator is the superuser for named memo operations and
+	// is not held to authorship or Space membership. Structural validity below
+	// still applies to every actor.
+	if !snapshot.ActorIsAdmin && snapshot.CreatorID != policy.ActorUserID {
 		return ErrMemoPermissionDenied
 	}
 	if snapshot.RowStatus != Normal && snapshot.RowStatus != Archived {
@@ -286,7 +357,7 @@ func ValidateMemoWriteSnapshot(policy *MemoWritePolicy, update *UpdateMemo, snap
 		if !snapshot.SourceSpaceExists {
 			return ErrMemoSpaceNotWritable
 		}
-		if !policy.LifecycleOnly && !snapshot.SourceMemberActive {
+		if !policy.LifecycleOnly && !snapshot.ActorIsAdmin && !snapshot.SourceMemberActive {
 			return ErrMemoSpaceMembershipRequired
 		}
 	}
@@ -298,7 +369,7 @@ func ValidateMemoWriteSnapshot(policy *MemoWritePolicy, update *UpdateMemo, snap
 			if !snapshot.TargetSpaceExists {
 				return ErrMemoSpaceNotWritable
 			}
-			if !snapshot.TargetMemberActive {
+			if !snapshot.ActorIsAdmin && !snapshot.TargetMemberActive {
 				return ErrMemoSpaceMembershipRequired
 			}
 			resultSpaceID = update.SpaceID
