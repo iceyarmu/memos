@@ -136,6 +136,10 @@ func TestCreateAttachment(t *testing.T) {
 		require.NotNil(t, firstStoreAttachment)
 		require.NotNil(t, secondStoreAttachment)
 
+		require.Equal(t, "assets/screenshot.png", firstStoreAttachment.Reference)
+		require.Equal(t, "assets/screenshot_"+secondUID+".png", secondStoreAttachment.Reference)
+		require.Equal(t, firstStoreAttachment.Reference, first.Reference)
+		require.Equal(t, secondStoreAttachment.Reference, second.Reference)
 		require.NotEqual(t, firstStoreAttachment.Reference, secondStoreAttachment.Reference)
 
 		firstBlob, err := ts.Service.GetAttachmentBlob(ctx, firstStoreAttachment)
@@ -231,7 +235,7 @@ func TestCreateAttachmentCleansSavedBlobWhenStoreCreateFails(t *testing.T) {
 	persistedPostCommit, err := ts.Store.GetAttachment(ctx, &store.FindAttachment{UID: &postCommitUID})
 	require.NoError(t, err)
 	require.NotNil(t, persistedPostCommit)
-	require.Equal(t, postCommitPath, filepath.FromSlash(persistedPostCommit.Reference))
+	require.Equal(t, "assets/post-commit.txt", persistedPostCommit.Reference)
 
 	cleanupFailurePath := filepath.Join(ts.Profile.Data, "assets", "cleanup-failure.txt")
 	t.Cleanup(func() { _ = os.Remove(cleanupFailurePath) })

@@ -87,7 +87,7 @@ func TestUploadAttachmentChunksAndRetries(t *testing.T) {
 	rows, err := svc.Store.ListAttachments(ctx, &store.FindAttachment{})
 	require.NoError(t, err)
 	require.Len(t, rows, 1)
-	content, err := os.ReadFile(rows[0].Reference)
+	content, err := os.ReadFile(filepath.Join(svc.Profile.Data, filepath.FromSlash(rows[0].Reference)))
 	require.NoError(t, err)
 	require.Equal(t, "abcdef", string(content))
 	require.NoFileExists(t, svc.attachmentUploads.entries[id].path)
@@ -135,6 +135,54 @@ func TestUploadAttachmentSingleCall(t *testing.T) {
 	rows, err := svc.Store.ListAttachments(ctx, &store.FindAttachment{})
 	require.NoError(t, err)
 	require.Len(t, rows, 3)
+}
+
+func TestUploadAttachmentLocalTemplateKeepsRelativeReference(t *testing.T) {
+	svc, ctx := newUploadTestService(t)
+	_, err := svc.Store.UpsertInstanceSetting(ctx, &storepb.InstanceSetting{
+		Key: storepb.InstanceSettingKey_STORAGE,
+		Value: &storepb.InstanceSetting_StorageSetting{StorageSetting: &storepb.InstanceStorageSetting{
+			StorageType:      storepb.InstanceStorageSetting_LOCAL,
+			FilepathTemplate: "assets/{username}/{year}/{month}/{day}_{timestamp}_{filename}",
+		}},
+	})
+	require.NoError(t, err)
+	content := []byte("uploaded picture")
+	spec := uploadSpec("photo.jpg", int64(len(content)))
+	spec.Spec.Attachment.Type = "image/jpeg"
+	upload, err := svc.UploadAttachment(ctx, &apipb.UploadAttachmentRequest{
+		Upload: spec, Data: content, FinishWrite: true,
+	})
+	require.NoError(t, err)
+	reference := upload.Attachment.Reference
+	require.Regexp(t, `^assets/uploader/\d{4}/\d{2}/\d{2}_\d+_photo\.jpg$`, reference)
+	require.True(t, filepath.IsLocal(reference))
+	rows, err := svc.Store.ListAttachments(ctx, &store.FindAttachment{})
+	require.NoError(t, err)
+	require.Len(t, rows, 1)
+	require.Equal(t, reference, rows[0].Reference)
+	blob, err := svc.GetAttachmentBlob(ctx, rows[0])
+	require.NoError(t, err)
+	require.Equal(t, content, blob)
+
+	// Reproduce an attachment saved by the regressed uploader. The API must
+	// repair its public reference without moving the file or rewriting the row.
+	absolutePath := filepath.Join(svc.Profile.Data, filepath.FromSlash(reference))
+	legacy, err := svc.Store.CreateAttachment(ctx, &store.Attachment{
+		UID: "legacy-absolute-path", CreatorID: rows[0].CreatorID,
+		Filename: "photo.jpg", Type: "image/jpeg", Size: int64(len(content)),
+		StorageType: storepb.AttachmentStorageType_LOCAL, Reference: absolutePath,
+	})
+	require.NoError(t, err)
+	got, err := svc.GetAttachment(ctx, &apipb.GetAttachmentRequest{Name: "attachments/" + legacy.UID})
+	require.NoError(t, err)
+	require.Equal(t, reference, got.Reference)
+	stored, err := svc.Store.GetAttachment(ctx, &store.FindAttachment{UID: &legacy.UID})
+	require.NoError(t, err)
+	require.Equal(t, absolutePath, stored.Reference)
+	blob, err = svc.GetAttachmentBlob(ctx, stored)
+	require.NoError(t, err)
+	require.Equal(t, content, blob)
 }
 
 func TestUploadAttachmentValidation(t *testing.T) {
@@ -228,7 +276,7 @@ func TestUploadAttachmentFinalizationRecovery(t *testing.T) {
 	rows, err := svc.Store.ListAttachments(ctx, &store.FindAttachment{})
 	require.NoError(t, err)
 	require.Len(t, rows, 1)
-	content, err := os.ReadFile(rows[0].Reference)
+	content, err := os.ReadFile(filepath.Join(svc.Profile.Data, filepath.FromSlash(rows[0].Reference)))
 	require.NoError(t, err)
 	require.Equal(t, "abc", string(content))
 }
@@ -313,7 +361,7 @@ func TestUploadAttachmentAboveLegacyRequestLimit(t *testing.T) {
 	rows, err := svc.Store.ListAttachments(ctx, &store.FindAttachment{})
 	require.NoError(t, err)
 	require.Len(t, rows, 1)
-	file, err := os.Open(rows[0].Reference)
+	file, err := os.Open(filepath.Join(svc.Profile.Data, filepath.FromSlash(rows[0].Reference)))
 	require.NoError(t, err)
 	defer file.Close()
 	info, err := file.Stat()
@@ -350,7 +398,7 @@ func TestUploadAttachmentMediaProcessing(t *testing.T) {
 			require.NoError(t, err)
 			row, err := svc.Store.GetAttachment(ctx, &store.FindAttachment{UID: &uid})
 			require.NoError(t, err)
-			content, err := os.ReadFile(row.Reference)
+			content, err := os.ReadFile(filepath.Join(svc.Profile.Data, filepath.FromSlash(row.Reference)))
 			require.NoError(t, err)
 			if tc.motion {
 				require.Equal(t, tc.content, content)

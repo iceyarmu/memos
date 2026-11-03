@@ -268,7 +268,7 @@ func (s *APIService) persistAttachment(ctx context.Context, create *store.Attach
 		s.SSEHub.publishMemoChanged()
 	}
 
-	return convertAttachmentFromStore(attachment), nil
+	return convertAttachmentFromStore(attachment, s.Profile.Data), nil
 }
 
 func (s *APIService) ListAttachments(ctx context.Context, request *apipb.ListAttachmentsRequest) (*apipb.ListAttachmentsResponse, error) {
@@ -329,7 +329,7 @@ func (s *APIService) ListAttachments(ctx context.Context, request *apipb.ListAtt
 	}
 
 	for _, attachment := range attachments {
-		response.Attachments = append(response.Attachments, convertAttachmentFromStore(attachment))
+		response.Attachments = append(response.Attachments, convertAttachmentFromStore(attachment, s.Profile.Data))
 	}
 
 	return response, nil
@@ -353,7 +353,7 @@ func (s *APIService) GetAttachment(ctx context.Context, request *apipb.GetAttach
 		return nil, err
 	}
 
-	return convertAttachmentFromStore(attachment), nil
+	return convertAttachmentFromStore(attachment, s.Profile.Data), nil
 }
 
 func (s *APIService) UpdateAttachment(ctx context.Context, request *apipb.UpdateAttachmentRequest) (*apipb.Attachment, error) {
@@ -414,7 +414,7 @@ func (s *APIService) UpdateAttachment(ctx context.Context, request *apipb.Update
 	if updatedAttachment.MemoID != nil {
 		s.SSEHub.publishMemoChanged()
 	}
-	return convertAttachmentFromStore(updatedAttachment), nil
+	return convertAttachmentFromStore(updatedAttachment, s.Profile.Data), nil
 }
 
 func (s *APIService) DeleteAttachment(ctx context.Context, request *apipb.DeleteAttachmentRequest) (*emptypb.Empty, error) {

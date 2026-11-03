@@ -590,7 +590,7 @@ func (s *APIService) ListMemoAttachments(ctx context.Context, request *apipb.Lis
 		Attachments: []*apipb.Attachment{},
 	}
 	for _, attachment := range attachments {
-		response.Attachments = append(response.Attachments, convertAttachmentFromStore(attachment))
+		response.Attachments = append(response.Attachments, convertAttachmentFromStore(attachment, s.Profile.Data))
 	}
 	return response, nil
 }

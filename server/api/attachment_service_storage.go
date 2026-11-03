@@ -23,7 +23,7 @@ import (
 	"github.com/usememos/memos/store"
 )
 
-func convertAttachmentFromStore(attachment *store.Attachment) *apipb.Attachment {
+func convertAttachmentFromStore(attachment *store.Attachment, dataDir string) *apipb.Attachment {
 	attachmentMessage := &apipb.Attachment{
 		Name:          fmt.Sprintf("%s%s", AttachmentNamePrefix, attachment.UID),
 		CreateTime:    timestamppb.New(time.Unix(attachment.CreatedTs, 0)),
@@ -40,14 +40,28 @@ func convertAttachmentFromStore(attachment *store.Attachment) *apipb.Attachment 
 		memoName := fmt.Sprintf("%s%s", MemoNamePrefix, *attachment.MemoUID)
 		attachmentMessage.Memo = &memoName
 	}
-	// Managed storage is always addressed through the authenticated file route.
-	// In particular, never expose an expiring S3 presigned URL as attachment API
-	// metadata because it can outlive a memo visibility change.
+	// The fork's /files/ mapping expects paths relative to the data directory.
+	// Normalize absolute references left by earlier uploads only in the API
+	// response; filesystem reads and deletes still use the original store value.
 	if attachment.StorageType == storepb.AttachmentStorageType_LOCAL {
-		attachmentMessage.Reference = attachment.Reference
+		reference := filepath.FromSlash(attachment.Reference)
+		if filepath.IsAbs(reference) {
+			var err error
+			reference, err = filepath.Rel(dataDir, reference)
+			if err != nil {
+				reference = ""
+			}
+		}
+		// Paths outside the data directory have no /files/ mapping. Leave the
+		// reference empty so clients use the existing /file/attachments route.
+		if filepath.IsLocal(reference) {
+			attachmentMessage.Reference = filepath.ToSlash(reference)
+		}
 	} else if attachment.StorageType == storepb.AttachmentStorageType_EXTERNAL {
 		attachmentMessage.ExternalLink = attachment.Reference
 	}
+	// Never expose an expiring S3 presigned URL as attachment API metadata
+	// because it can outlive a memo visibility change.
 
 	return attachmentMessage
 }
@@ -107,12 +121,13 @@ func saveAttachmentContent(
 
 		// Ensure the directory exists.
 		osPath := filepath.FromSlash(internalPath)
-		if !filepath.IsAbs(osPath) {
+		isRelativePath := !filepath.IsAbs(osPath)
+		if isRelativePath {
 			osPath = filepath.Join(profile.Data, osPath)
 		}
 		osPath = ensureUniqueLocalAttachmentPath(osPath, create.UID)
 		internalPath = filepath.ToSlash(osPath)
-		if !filepath.IsAbs(filepath.FromSlash(internalPath)) {
+		if isRelativePath {
 			relativePath, err := filepath.Rel(profile.Data, osPath)
 			if err != nil {
 				return errors.Wrap(err, "Failed to get relative path")
