@@ -322,3 +322,10 @@ the reader rejects.
 
 The export route is a plain HTTP route and no longer appears in the generated clients or the OpenAPI document. The
 `Export semantics` and `Transport` sections above describe the RPC as it shipped in 26.10.0-rc.2.
+
+### 2026-11-04: preserve original attachment bytes
+
+The shared upload/import pipeline now stores attachment bytes unchanged, including EXIF metadata.
+It no longer decodes and re-encodes images, so original downloads retain the source checksum and
+imports do not introduce another lossy image conversion. Motion-photo detection remains read-only;
+thumbnail and motion-video requests still return derived content.

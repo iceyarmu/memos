@@ -382,6 +382,7 @@ func TestUploadAttachmentMediaProcessing(t *testing.T) {
 		motion  bool
 	}{
 		{name: "JPEG", content: testutil.BuildJPEG(20, 10)},
+		{name: "JPEG with EXIF", content: jpegWithExifMarker(t)},
 		{name: "motion photo", content: testutil.BuildMotionPhotoJPEG(), motion: true},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
@@ -400,13 +401,10 @@ func TestUploadAttachmentMediaProcessing(t *testing.T) {
 			require.NoError(t, err)
 			content, err := os.ReadFile(filepath.Join(svc.Profile.Data, filepath.FromSlash(row.Reference)))
 			require.NoError(t, err)
+			require.Equal(t, tc.content, content)
+			require.EqualValues(t, len(tc.content), result.Attachment.Size)
 			if tc.motion {
-				require.Equal(t, tc.content, content)
 				require.True(t, result.Attachment.MotionMedia.HasEmbeddedVideo)
-			} else {
-				stripped, err := stripImageExif(bytes.NewReader(tc.content), "image/jpeg")
-				require.NoError(t, err)
-				require.Equal(t, stripped, content)
 			}
 		})
 	}

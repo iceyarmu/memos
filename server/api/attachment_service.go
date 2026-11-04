@@ -26,6 +26,8 @@ import (
 const (
 	MebiByte = 1024 * 1024
 
+	stripAttachmentExif = false
+
 	// defaultJPEGQuality is the JPEG quality used when re-encoding images for EXIF stripping.
 	// Quality 95 maintains visual quality while ensuring metadata is removed.
 	defaultJPEGQuality        = 95
@@ -217,7 +219,7 @@ func (s *APIService) processAndSaveAttachment(ctx context.Context, create *store
 	if err != nil {
 		return nil, status.Errorf(codes.Internal, "failed to inspect attachment content: %v", err)
 	}
-	if needsExifStrip && !isAndroidMotionContainer(create.Payload.GetMotionMedia()) {
+	if stripAttachmentExif && needsExifStrip && !isAndroidMotionContainer(create.Payload.GetMotionMedia()) {
 		release, err := s.acquireImageProcessingSlot(ctx)
 		if err != nil {
 			return nil, status.Errorf(codes.ResourceExhausted, "too many image processing requests")

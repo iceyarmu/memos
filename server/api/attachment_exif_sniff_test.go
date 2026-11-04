@@ -75,7 +75,7 @@ func TestCreateAttachmentStripsExifFromMislabeledJPEG(t *testing.T) {
 	require.NoError(t, err)
 	blob, err := svc.GetAttachmentBlob(ctx, stored)
 	require.NoError(t, err)
-	require.NotContains(t, string(blob), exifTestMarker)
+	require.Equal(t, content, blob)
 	_, err = jpeg.Decode(bytes.NewReader(blob))
 	require.NoError(t, err)
 }

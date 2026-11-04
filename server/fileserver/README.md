@@ -37,6 +37,7 @@ the server injects as `MemoExporter`; without it the route answers `404`.
 ## Serving behavior
 
 - Local storage keeps relative filepath templates relative to the data directory; explicit absolute templates remain absolute on disk. Attachment API responses normalize existing absolute references inside the data directory to relative paths for this fork's reverse-proxy `/files/` mapping. References outside that directory are omitted from API metadata so clients use `/file/attachments/:uid/:filename`. The file server still resolves the original stored reference for reads; no file move or database rewrite is needed.
+- **Original attachments** retain the uploaded bytes, including EXIF metadata. Both single-request and chunked uploads preserve checksums; `?thumbnail=true` and `?motion=true` explicitly request derived content instead.
 - **Video/audio** are streamed with range-request support (`http.ServeFile` / `http.ServeContent` for local and database storage); S3-backed media is proxied with ranged `GetObject` requests.
 - **Thumbnails** are generated at max 600px, cached in `{data_dir}/.thumbnail_cache/`, with a semaphore capping concurrent generation. Images with HDR/wide-gamut metadata are served as originals, since re-encoding would strip it.
 - **Motion photos** have their embedded video extracted and cached in `{data_dir}/.motion_cache/`.
