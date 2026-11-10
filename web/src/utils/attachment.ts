@@ -2,6 +2,35 @@ import { Attachment, MotionMediaFamily, MotionMediaRole } from "@/types/proto/ap
 
 const isIPAddress = (hostname: string): boolean => /^(\d{1,3}\.){3}\d{1,3}$/.test(hostname) || hostname.includes(":");
 
+export const isHTMLAttachment = (attachment: Attachment): boolean => {
+  if (attachment.type.split(";")[0].trim().toLowerCase() !== "text/html") return false;
+  if (!attachment.externalLink) return true;
+  try {
+    const url = new URL(attachment.externalLink, window.location.origin);
+    return url.origin === window.location.origin && url.pathname.startsWith("/file/attachments/") && url.searchParams.has("share_token");
+  } catch {
+    return false;
+  }
+};
+
+// Preview and download use the authorized endpoint, including on hosts with a /files/ mapping.
+export const getHTMLAttachmentDownloadUrl = (attachment: Attachment): string => {
+  const url = new URL(`/file/${attachment.name}/${encodeURIComponent(attachment.filename)}`, window.location.origin);
+  if (attachment.externalLink) {
+    const external = new URL(attachment.externalLink, window.location.origin);
+    const token = external.searchParams.get("share_token");
+    if (external.origin === url.origin && token) url.searchParams.set("share_token", token);
+  }
+  return url.toString();
+};
+
+export const getAttachmentOpenUrl = (attachment: Attachment): string => {
+  if (!isHTMLAttachment(attachment)) return getAttachmentUrl(attachment);
+  const url = new URL(getHTMLAttachmentDownloadUrl(attachment));
+  url.searchParams.set("preview", "true");
+  return url.toString();
+};
+
 export const getAttachmentUrl = (attachment: Attachment) => {
   if (attachment.externalLink) {
     return attachment.externalLink;

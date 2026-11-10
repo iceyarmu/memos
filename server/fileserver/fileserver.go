@@ -174,6 +174,14 @@ func (s *FileServerService) serveAttachmentFile(w http.ResponseWriter, r *http.R
 	if readClass == access.MemoReadClassPublic {
 		w.Header().Set("Cache-Control", publicAttachmentCacheControl)
 	}
+	if preview := r.URL.Query().Get("preview"); preview != "" {
+		if !isHTMLAttachment(attachment) || (preview != "true" && preview != "content") || wantThumbnail || wantMotion {
+			return &httphandler.Error{Code: http.StatusBadRequest, Message: "unsupported attachment preview"}
+		}
+		if preview == "true" {
+			return serveHTMLPreviewPage(w, r, attachment)
+		}
+	}
 	if attachment.StorageType != storepb.AttachmentStorageType_LOCAL && attachment.StorageType != storepb.AttachmentStorageType_S3 {
 		attachment, err = s.Store.GetAttachment(ctx, &store.FindAttachment{ID: &attachment.ID, GetBlob: true})
 		if err != nil {
@@ -291,7 +299,14 @@ func (s *FileServerService) serveStaticFile(w http.ResponseWriter, r *http.Reque
 	setMediaHeaders(w, contentType, attachment.Type)
 
 	// Force download for non-media files to prevent XSS execution.
-	if !strings.HasPrefix(contentType, "image/") && contentType != "application/pdf" {
+	if r.URL.Query().Get("preview") == "content" {
+		contentType = "text/html; charset=utf-8"
+		w.Header().Set("Content-Type", contentType)
+		w.Header().Set("Content-Disposition", "inline")
+		w.Header().Del("X-Frame-Options")
+		w.Header().Set("Referrer-Policy", "no-referrer")
+		w.Header().Set("Content-Security-Policy", "sandbox allow-scripts; default-src 'none'; script-src 'unsafe-inline'; style-src 'unsafe-inline'; img-src data: blob:; font-src data:; media-src data: blob:; connect-src 'none'; base-uri 'none'; form-action 'none'; frame-ancestors 'self'")
+	} else if !strings.HasPrefix(contentType, "image/") && contentType != "application/pdf" {
 		w.Header().Set("Content-Disposition", fmt.Sprintf("attachment; filename=%q", attachment.Filename))
 	}
 

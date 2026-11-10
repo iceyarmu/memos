@@ -9,6 +9,8 @@ GET /file/attachments/:uid[/:filename]   # attachment binary
     ?thumbnail=true                      # JPEG thumbnail for supported image types
     ?motion=true                         # embedded motion-photo video clip
     ?share_token={uid}                   # access via a memo share link
+    ?preview=true                        # isolated HTML preview page with download control
+    ?preview=content                     # sandboxed HTML content (text/html only)
 GET /file/users/:identifier/avatar       # user avatar (by username)
 GET /file/users/:identifier/export       # Memos export file of that user (administrators only; HEAD = preflight)
 ```
@@ -42,6 +44,7 @@ the server injects as `MemoExporter`; without it the route answers `404`.
 - **Thumbnails** are generated at max 600px, cached in `{data_dir}/.thumbnail_cache/`, with a semaphore capping concurrent generation. Images with HDR/wide-gamut metadata are served as originals, since re-encoding would strip it.
 - **Motion photos** have their embedded video extracted and cached in `{data_dir}/.motion_cache/`.
 - **XSS prevention**: script-capable MIME types are rewritten to `application/octet-stream`, non-media files get `Content-Disposition: attachment`, and all responses carry `X-Content-Type-Options: nosniff` plus a restrictive `Content-Security-Policy`.
+- **HTML preview**: the explicit preview modes reuse attachment authorization, including share tokens, for local, database and S3 files. The wrapper embeds content with `sandbox="allow-scripts"`; the content response also enforces CSP sandbox without same-origin privileges. Embedded scripts/styles and data images work, while external libraries, fetch requests, forms and popups are restricted. Original URLs remain downloads. The frontend bypasses the fork's `/files/` mapping for HTML preview and download.
 - **Caching**: public attachments get `public, no-cache`; private ones `private, no-store`; avatars and thumbnails `public, max-age=3600`.
 
 ## Testing

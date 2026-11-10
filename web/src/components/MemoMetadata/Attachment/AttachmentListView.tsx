@@ -6,7 +6,7 @@ import { buttonVariants } from "@/components/ui/button";
 import VideoPoster from "@/components/VideoPoster";
 import { cn } from "@/lib/utils";
 import type { Attachment } from "@/types/proto/api/attachment_service_pb";
-import { getAttachmentUrl, isImage } from "@/utils/attachment";
+import { getAttachmentOpenUrl, getAttachmentUrl, getHTMLAttachmentDownloadUrl, isHTMLAttachment, isImage } from "@/utils/attachment";
 import type { AttachmentVisualItem, PreviewMediaItem } from "@/utils/media-item";
 import { buildAttachmentVisualItems } from "@/utils/media-item";
 import {
@@ -214,7 +214,8 @@ const isServedHere = (url: string) => {
  */
 const DocumentRow = ({ attachment }: { attachment: Attachment }) => {
   const { fileTypeLabel, fileSizeLabel } = getAttachmentMetadata(attachment);
-  const url = getAttachmentUrl(attachment);
+  const url = getAttachmentOpenUrl(attachment);
+  const html = isHTMLAttachment(attachment);
   const body = (
     <>
       <MetadataRowIconSlot icon={FileIcon} />
@@ -232,7 +233,7 @@ const DocumentRow = ({ attachment }: { attachment: Attachment }) => {
     );
   }
 
-  if (!opensInline(attachment.type)) {
+  if (!html && !opensInline(attachment.type)) {
     return (
       <a href={url} download title={`Download ${attachment.filename}`} className={METADATA_ROW_CLASSES}>
         {body}
@@ -248,7 +249,7 @@ const DocumentRow = ({ attachment }: { attachment: Attachment }) => {
       </a>
       <div className={METADATA_ROW_CONTROLS_CLASSES}>
         <a
-          href={url}
+          href={html ? getHTMLAttachmentDownloadUrl(attachment) : url}
           download
           title="Download"
           aria-label={`Download ${attachment.filename}`}

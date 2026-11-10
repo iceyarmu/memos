@@ -3,11 +3,46 @@ import { render, screen } from "@testing-library/react";
 import { describe, expect, it } from "vitest";
 import { AttachmentRows } from "@/components/MemoMetadata/Attachment/AttachmentListView";
 import { AttachmentSchema } from "@/types/proto/api/attachment_service_pb";
+import { getAttachmentOpenUrl, getHTMLAttachmentDownloadUrl } from "@/utils/attachment";
 
 const renderDocument = (fields: { filename: string; type: string; externalLink?: string }) =>
   render(<AttachmentRows audio={[]} docs={[create(AttachmentSchema, { name: "attachments/doc", ...fields })]} />);
 
 describe("<AttachmentRows> document rows", () => {
+  it("bypasses the static files mapping for HTML preview and download", () => {
+    const attachment = create(AttachmentSchema, {
+      name: "attachments/doc",
+      filename: "report.html",
+      type: "text/html",
+      reference: "assets/report.html",
+    });
+    expect(new URL(getAttachmentOpenUrl(attachment)).pathname).toBe("/file/attachments/doc/report.html");
+    expect(new URL(getHTMLAttachmentDownloadUrl(attachment)).pathname).toBe("/file/attachments/doc/report.html");
+  });
+
+  it("keeps external HTML links on their original host", () => {
+    renderDocument({ filename: "external.html", type: "text/html", externalLink: "https://example.com/report.html" });
+    expect(screen.getByTitle("Open external.html").getAttribute("href")).toBe("https://example.com/report.html");
+  });
+
+  it("opens HTML in isolated preview and preserves the share token for preview and download", () => {
+    renderDocument({
+      filename: "report.html",
+      type: "text/html",
+      externalLink: `${window.location.origin}/file/attachments/doc/report.html?share_token=abc`,
+    });
+    const open = screen.getByTitle("Open report.html");
+    const preview = new URL(open.getAttribute("href")!);
+    expect(open.getAttribute("target")).toBe("_blank");
+    expect(preview.searchParams.get("preview")).toBe("true");
+    expect(preview.searchParams.get("share_token")).toBe("abc");
+    const download = screen.getByLabelText("Download report.html");
+    const original = new URL(download.getAttribute("href")!);
+    expect(download.hasAttribute("download")).toBe(true);
+    expect(original.searchParams.has("preview")).toBe(false);
+    expect(original.searchParams.get("share_token")).toBe("abc");
+  });
+
   it("opens a PDF in a new tab and offers its download separately", () => {
     renderDocument({ filename: "report.pdf", type: "application/pdf" });
 

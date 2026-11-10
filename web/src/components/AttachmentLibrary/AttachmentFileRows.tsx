@@ -1,13 +1,36 @@
-import { FileAudioIcon, FileIcon, PlayIcon } from "lucide-react";
+import { DownloadIcon, FileAudioIcon, FileIcon, PlayIcon } from "lucide-react";
 import AudioAttachmentItem from "@/components/MemoMetadata/Attachment/AudioAttachmentItem";
 import VideoPoster from "@/components/VideoPoster";
 import type { AttachmentLibraryListItem } from "@/hooks/useAttachmentLibrary";
 import { cn } from "@/lib/utils";
 import type { User } from "@/types/proto/api/user_service_pb";
-import { getAttachmentThumbnailUrl, getAttachmentType, isMotionAttachment } from "@/utils/attachment";
+import {
+  getAttachmentOpenUrl,
+  getAttachmentThumbnailUrl,
+  getAttachmentType,
+  getHTMLAttachmentDownloadUrl,
+  isHTMLAttachment,
+  isMotionAttachment,
+} from "@/utils/attachment";
 import { AttachmentCreator, AttachmentMetadataLine, AttachmentOpenButton, AttachmentSourceChip } from "./AttachmentLibraryPrimitives";
 
 type AttachmentCreators = Map<string, User | undefined>;
+
+const FileActions = ({ item }: { item: AttachmentLibraryListItem }) => (
+  <>
+    {isHTMLAttachment(item.attachment) && (
+      <a
+        href={getHTMLAttachmentDownloadUrl(item.attachment)}
+        download
+        aria-label={`Download ${item.attachment.filename}`}
+        className="p-1.5 text-muted-foreground hover:text-foreground"
+      >
+        <DownloadIcon className="size-3.5" />
+      </a>
+    )}
+    <AttachmentOpenButton href={getAttachmentOpenUrl(item.attachment)} />
+  </>
+);
 
 const AttachmentThumb = ({ item, className }: { item: AttachmentLibraryListItem; className?: string }) => {
   const type = getAttachmentType(item.attachment);
@@ -58,9 +81,15 @@ export const AttachmentDocumentRows = ({ items, creators }: { items: AttachmentL
           </div>
 
           <div className="min-w-0 flex-1">
-            <div className="truncate text-sm font-medium text-foreground" title={item.attachment.filename}>
+            <a
+              href={getAttachmentOpenUrl(item.attachment)}
+              target="_blank"
+              rel="noreferrer"
+              className="block truncate text-sm font-medium text-foreground hover:underline"
+              title={item.attachment.filename}
+            >
               {item.attachment.filename}
-            </div>
+            </a>
             <div className="mt-0.5 flex flex-wrap items-center gap-1.5">
               <AttachmentMetadataLine className="min-w-0 max-w-full" items={[item.fileTypeLabel, item.fileSizeLabel, item.createdLabel]} />
               <AttachmentCreator creatorName={item.attachment.creator} user={creators?.get(item.attachment.creator)} />
@@ -68,7 +97,7 @@ export const AttachmentDocumentRows = ({ items, creators }: { items: AttachmentL
             </div>
           </div>
 
-          <AttachmentOpenButton href={item.sourceUrl} />
+          <FileActions item={item} />
         </article>
       ))}
     </div>
@@ -114,9 +143,15 @@ export const AttachmentUnusedRows = ({ items, creators }: { items: AttachmentLib
           <AttachmentThumb item={item} className="h-10 w-10 shrink-0" />
 
           <div className="min-w-0 flex-1">
-            <div className="truncate text-sm font-medium text-foreground" title={item.attachment.filename}>
+            <a
+              href={getAttachmentOpenUrl(item.attachment)}
+              target="_blank"
+              rel="noreferrer"
+              className="block truncate text-sm font-medium text-foreground hover:underline"
+              title={item.attachment.filename}
+            >
               {item.attachment.filename}
-            </div>
+            </a>
             <div className="mt-0.5 flex flex-wrap items-center gap-1.5">
               <AttachmentMetadataLine className="min-w-0 max-w-full" items={[item.fileTypeLabel, item.fileSizeLabel, item.createdLabel]} />
               <AttachmentCreator creatorName={item.attachment.creator} user={creators?.get(item.attachment.creator)} />
@@ -124,7 +159,7 @@ export const AttachmentUnusedRows = ({ items, creators }: { items: AttachmentLib
             </div>
           </div>
 
-          <AttachmentOpenButton className="text-warning/90 hover:text-warning" href={item.sourceUrl} />
+          <FileActions item={item} />
         </article>
       ))}
     </div>
