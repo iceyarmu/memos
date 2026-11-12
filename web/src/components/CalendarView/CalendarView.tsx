@@ -12,6 +12,7 @@ import useCurrentUser from "@/hooks/useCurrentUser";
 import { useFilteredMemoStats } from "@/hooks/useFilteredMemoStats";
 import useMediaQuery from "@/hooks/useMediaQuery";
 import { useMemoFilters } from "@/hooks/useMemoFilters";
+import { useStoryDateCounts } from "@/hooks/useStories";
 import { formatMonthLabel, getToday, parseLocalDate } from "@/lib/calendar-utils";
 import { combineCELFilters } from "@/lib/cel-filter";
 import { isMemoBlurred } from "@/lib/tag";
@@ -22,6 +23,7 @@ import { PREVIEW_MIN_CELL_WIDTH } from "./CalendarDayCell";
 import { CalendarGrid } from "./CalendarGrid";
 import { CalendarHeader } from "./CalendarHeader";
 import { buildCalendarPath, getDefaultDate } from "./paths";
+import { StoryDayList } from "./StoryDayList";
 import { useMonthMemos } from "./useMonthMemos";
 
 const NO_MEMOS: Memo[] = [];
@@ -61,7 +63,7 @@ export const CalendarView = ({ month, date }: CalendarViewProps) => {
   const xl = useMediaQuery("xl");
   const { userTagsSetting, isInitialized: authInitialized, isUserSettingsInitialized } = useAuth();
   const { isInitialized: instanceInitialized } = useInstance();
-  const { memoFilter: contextFilter, creatorUsername } = useSpaceContext();
+  const { memoFilter: contextFilter, creatorUsername, selectedSpaceName } = useSpaceContext();
 
   // The sidebar's view and tag filters narrow the month exactly as they narrow Home. They are
   // not echoed as chips here: the sidebar already shows them checked and clears them on a
@@ -95,6 +97,7 @@ export const CalendarView = ({ month, date }: CalendarViewProps) => {
     [navigate, month, search, pathname],
   );
 
+  const storyCounts = useStoryDateCounts(Boolean(user && !selectedSpaceName && (!creatorUsername || creatorUsername === user.username)));
   const today = getToday();
   const activeDate = date ?? (md ? undefined : getDefaultDate(month, today));
   const activeMemos = (activeDate && model[activeDate]?.memos) || NO_MEMOS;
@@ -117,22 +120,25 @@ export const CalendarView = ({ month, date }: CalendarViewProps) => {
 
   const canCompose = Boolean(user && (!creatorUsername || creatorUsername === user.username));
   const list = activeDate && (
-    <MemoPanelList
-      memos={activeMemos}
-      selectionKey={activeDate}
-      timeDisplay="time"
-      emptyText={canCompose ? undefined : t("calendar.no-memos-on-day")}
-      compose={
-        canCompose
-          ? {
-              scope: `calendar:${activeDate}`,
-              label: t("calendar.new-memo-on-day"),
-              defaults: { createTime: defaultCreateTime },
-              onSavingChange: setSaving,
-            }
-          : undefined
-      }
-    />
+    <>
+      <MemoPanelList
+        memos={activeMemos}
+        selectionKey={activeDate}
+        timeDisplay="time"
+        emptyText={canCompose ? undefined : t("calendar.no-memos-on-day")}
+        compose={
+          canCompose
+            ? {
+                scope: `calendar:${activeDate}`,
+                label: t("calendar.new-memo-on-day"),
+                defaults: { createTime: defaultCreateTime },
+                onSavingChange: setSaving,
+              }
+            : undefined
+        }
+      />
+      {user && !selectedSpaceName && (!creatorUsername || creatorUsername === user.username) && <StoryDayList date={activeDate} />}
+    </>
   );
 
   // A failed month must not pass for an empty one.
@@ -150,6 +156,7 @@ export const CalendarView = ({ month, date }: CalendarViewProps) => {
         <CalendarHeader month={month} monthLabel={monthLabel} today={today} activeDate={activeDate} closable={md} />
         <MentionResolutionProvider contents={NO_CONTENTS} userNames={authorNames}>
           <CalendarGrid
+            storyCounts={storyCounts}
             month={month}
             monthLabel={monthLabel}
             today={today}

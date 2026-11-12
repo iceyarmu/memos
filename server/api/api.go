@@ -66,6 +66,7 @@ type APIService struct {
 	apipb.UnimplementedAttachmentServiceServer
 	apipb.UnimplementedAIServiceServer
 	apipb.UnimplementedIdentityProviderServiceServer
+	apipb.UnimplementedStoryServiceServer
 
 	Secret                  string
 	Profile                 *profile.Profile
@@ -214,6 +215,9 @@ func (s *APIService) NewHandler(ctx context.Context) (http.Handler, error) {
 		return nil, err
 	}
 	if err := apipb.RegisterIdentityProviderServiceHandlerServer(ctx, gwMux, s); err != nil {
+		return nil, err
+	}
+	if err := apipb.RegisterStoryServiceHandlerServer(ctx, gwMux, s); err != nil {
 		return nil, err
 	}
 

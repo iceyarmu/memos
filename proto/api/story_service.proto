@@ -1,0 +1,136 @@
+syntax = "proto3";
+
+package memos.api;
+
+import "google/api/annotations.proto";
+import "google/protobuf/empty.proto";
+import "google/protobuf/field_mask.proto";
+
+option go_package = "gen/api";
+
+// StoryService manages private life archives and their dated events.
+service StoryService {
+  rpc SetStoryShare(SetStoryShareRequest) returns (StoryShare) {
+    option (google.api.http) = {
+      put: "/api/{name=stories/*}/share"
+      body: "*"
+    };
+  }
+  rpc GetSharedStory(GetSharedStoryRequest) returns (GetSharedStoryResponse) {
+    option (google.api.http) = {get: "/api/storyShares/{token}"};
+  }
+
+  rpc ListStories(ListStoriesRequest) returns (ListStoriesResponse) {
+    option (google.api.http) = {get: "/api/stories"};
+  }
+  rpc CreateStory(CreateStoryRequest) returns (Story) {
+    option (google.api.http) = {
+      post: "/api/stories"
+      body: "story"
+    };
+  }
+  rpc UpdateStory(UpdateStoryRequest) returns (Story) {
+    option (google.api.http) = {
+      patch: "/api/{story.name=stories/*}"
+      body: "story"
+    };
+  }
+  rpc DeleteStory(DeleteStoryRequest) returns (google.protobuf.Empty) {
+    option (google.api.http) = {delete: "/api/{name=stories/*}"};
+  }
+  rpc ListStoryEvents(ListStoryEventsRequest) returns (ListStoryEventsResponse) {
+    option (google.api.http) = {get: "/api/{parent=stories/*}/events"};
+  }
+  rpc CreateStoryEvent(CreateStoryEventRequest) returns (StoryEvent) {
+    option (google.api.http) = {
+      post: "/api/{parent=stories/*}/events"
+      body: "event"
+    };
+  }
+  rpc UpdateStoryEvent(UpdateStoryEventRequest) returns (StoryEvent) {
+    option (google.api.http) = {
+      patch: "/api/{event.name=storyEvents/*}"
+      body: "event"
+    };
+  }
+  rpc DeleteStoryEvent(DeleteStoryEventRequest) returns (google.protobuf.Empty) {
+    option (google.api.http) = {delete: "/api/{name=storyEvents/*}"};
+  }
+}
+
+message Story {
+  string name = 1;
+  string uid = 2;
+  string title = 3;
+  string description = 4;
+  string icon = 5;
+  string color = 6;
+  string visibility = 7;
+  int64 created_ts = 8;
+  int64 updated_ts = 9;
+  int32 event_count = 10;
+}
+message StoryEvent {
+  string name = 1;
+  string uid = 2;
+  string story = 3;
+  string title = 4;
+  string content = 5;
+  string event_date = 6;
+  string event_time = 7;
+  repeated string tags = 8;
+  int32 revision = 9;
+  repeated string attachment_uids = 10;
+  string memo = 11;
+  int64 created_ts = 12;
+  int64 updated_ts = 13;
+  // Empty for a main experience; otherwise the main event receiving this addition.
+  string parent_event = 14;
+}
+message ListStoriesRequest {}
+message ListStoriesResponse {
+  repeated Story stories = 1;
+}
+message CreateStoryRequest {
+  Story story = 1;
+}
+message UpdateStoryRequest {
+  Story story = 1;
+  google.protobuf.FieldMask update_mask = 2;
+}
+message DeleteStoryRequest {
+  string name = 1;
+}
+message ListStoryEventsRequest {
+  string parent = 1;
+}
+message ListStoryEventsResponse {
+  repeated StoryEvent events = 1;
+}
+message CreateStoryEventRequest {
+  string parent = 1;
+  StoryEvent event = 2;
+}
+message UpdateStoryEventRequest {
+  StoryEvent event = 1;
+  google.protobuf.FieldMask update_mask = 2;
+}
+message DeleteStoryEventRequest {
+  string name = 1;
+  int32 revision = 2;
+}
+
+message SetStoryShareRequest {
+  string name = 1;
+  bool enabled = 2;
+}
+message StoryShare {
+  string token = 1;
+}
+message GetSharedStoryRequest {
+  string token = 1;
+}
+message GetSharedStoryResponse {
+  Story story = 1;
+  repeated StoryEvent events = 2;
+}

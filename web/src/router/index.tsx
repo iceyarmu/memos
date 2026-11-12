@@ -18,6 +18,8 @@ const Archived = lazyWithReload(() => import("@/pages/Archived"));
 const AuthCallback = lazyWithReload(() => import("@/pages/AuthCallback"));
 const MemoMap = lazyWithReload(() => import("@/pages/Map"));
 const Calendar = lazyWithReload(() => import("@/pages/Calendar"));
+const SharedStory = lazyWithReload(() => import("@/pages/SharedStory"));
+const Stories = lazyWithReload(() => import("@/pages/Stories"));
 const Home = lazyWithReload(() => import("@/pages/Home"));
 // A signed-in user's Home composes at once, so the page's code arrives together with the
 // editing session's and the composer renders with the page, never after it.
@@ -88,6 +90,7 @@ export const routeConfig: RouteObject[] = [
           },
         ],
       },
+      { path: "story-shares/:token", element: <SharedStory /> },
       // Backward compatibility: the old `/home` URL now lives at `/`.
       { path: "home", element: <Navigate to={Routes.HOME} replace /> },
       {
@@ -111,7 +114,10 @@ export const routeConfig: RouteObject[] = [
                   { path: Routes.ARCHIVED, element: <Archived /> },
                   {
                     element: <RequireFullInitializationRoute />,
-                    children: [{ path: Routes.VIEWS, element: <MemoViews /> }],
+                    children: [
+                      { path: Routes.VIEWS, element: <MemoViews /> },
+                      { path: `${Routes.STORIES}/*`, element: <Stories /> },
+                    ],
                   },
                 ],
               },

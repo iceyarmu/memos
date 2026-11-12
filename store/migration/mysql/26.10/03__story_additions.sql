@@ -1,0 +1,1 @@
+ALTER TABLE story_event ADD COLUMN parent_event VARCHAR(255) NOT NULL DEFAULT '';

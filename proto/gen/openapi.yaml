@@ -1979,6 +1979,276 @@ paths:
                         application/json:
                             schema:
                                 $ref: '#/components/schemas/Status'
+    /api/stories:
+        get:
+            tags:
+                - StoryService
+            operationId: StoryService_ListStories
+            responses:
+                "200":
+                    description: OK
+                    content:
+                        application/json:
+                            schema:
+                                $ref: '#/components/schemas/ListStoriesResponse'
+                default:
+                    description: Default error response
+                    content:
+                        application/json:
+                            schema:
+                                $ref: '#/components/schemas/Status'
+        post:
+            tags:
+                - StoryService
+            operationId: StoryService_CreateStory
+            requestBody:
+                content:
+                    application/json:
+                        schema:
+                            $ref: '#/components/schemas/Story'
+                required: true
+            responses:
+                "200":
+                    description: OK
+                    content:
+                        application/json:
+                            schema:
+                                $ref: '#/components/schemas/Story'
+                default:
+                    description: Default error response
+                    content:
+                        application/json:
+                            schema:
+                                $ref: '#/components/schemas/Status'
+    /api/stories/{story}:
+        delete:
+            tags:
+                - StoryService
+            operationId: StoryService_DeleteStory
+            parameters:
+                - name: story
+                  in: path
+                  description: The story id.
+                  required: true
+                  schema:
+                    type: string
+            responses:
+                "200":
+                    description: OK
+                    content: {}
+                default:
+                    description: Default error response
+                    content:
+                        application/json:
+                            schema:
+                                $ref: '#/components/schemas/Status'
+        patch:
+            tags:
+                - StoryService
+            operationId: StoryService_UpdateStory
+            parameters:
+                - name: story
+                  in: path
+                  description: The story id.
+                  required: true
+                  schema:
+                    type: string
+                - name: updateMask
+                  in: query
+                  schema:
+                    type: string
+                    format: field-mask
+            requestBody:
+                content:
+                    application/json:
+                        schema:
+                            $ref: '#/components/schemas/Story'
+                required: true
+            responses:
+                "200":
+                    description: OK
+                    content:
+                        application/json:
+                            schema:
+                                $ref: '#/components/schemas/Story'
+                default:
+                    description: Default error response
+                    content:
+                        application/json:
+                            schema:
+                                $ref: '#/components/schemas/Status'
+    /api/stories/{story}/events:
+        get:
+            tags:
+                - StoryService
+            operationId: StoryService_ListStoryEvents
+            parameters:
+                - name: story
+                  in: path
+                  description: The story id.
+                  required: true
+                  schema:
+                    type: string
+            responses:
+                "200":
+                    description: OK
+                    content:
+                        application/json:
+                            schema:
+                                $ref: '#/components/schemas/ListStoryEventsResponse'
+                default:
+                    description: Default error response
+                    content:
+                        application/json:
+                            schema:
+                                $ref: '#/components/schemas/Status'
+        post:
+            tags:
+                - StoryService
+            operationId: StoryService_CreateStoryEvent
+            parameters:
+                - name: story
+                  in: path
+                  description: The story id.
+                  required: true
+                  schema:
+                    type: string
+            requestBody:
+                content:
+                    application/json:
+                        schema:
+                            $ref: '#/components/schemas/StoryEvent'
+                required: true
+            responses:
+                "200":
+                    description: OK
+                    content:
+                        application/json:
+                            schema:
+                                $ref: '#/components/schemas/StoryEvent'
+                default:
+                    description: Default error response
+                    content:
+                        application/json:
+                            schema:
+                                $ref: '#/components/schemas/Status'
+    /api/stories/{story}/share:
+        put:
+            tags:
+                - StoryService
+            operationId: StoryService_SetStoryShare
+            parameters:
+                - name: story
+                  in: path
+                  description: The story id.
+                  required: true
+                  schema:
+                    type: string
+            requestBody:
+                content:
+                    application/json:
+                        schema:
+                            $ref: '#/components/schemas/SetStoryShareRequest'
+                required: true
+            responses:
+                "200":
+                    description: OK
+                    content:
+                        application/json:
+                            schema:
+                                $ref: '#/components/schemas/StoryShare'
+                default:
+                    description: Default error response
+                    content:
+                        application/json:
+                            schema:
+                                $ref: '#/components/schemas/Status'
+    /api/storyEvents/{storyEvent}:
+        delete:
+            tags:
+                - StoryService
+            operationId: StoryService_DeleteStoryEvent
+            parameters:
+                - name: storyEvent
+                  in: path
+                  description: The storyEvent id.
+                  required: true
+                  schema:
+                    type: string
+                - name: revision
+                  in: query
+                  schema:
+                    type: integer
+                    format: int32
+            responses:
+                "200":
+                    description: OK
+                    content: {}
+                default:
+                    description: Default error response
+                    content:
+                        application/json:
+                            schema:
+                                $ref: '#/components/schemas/Status'
+        patch:
+            tags:
+                - StoryService
+            operationId: StoryService_UpdateStoryEvent
+            parameters:
+                - name: storyEvent
+                  in: path
+                  description: The storyEvent id.
+                  required: true
+                  schema:
+                    type: string
+                - name: updateMask
+                  in: query
+                  schema:
+                    type: string
+                    format: field-mask
+            requestBody:
+                content:
+                    application/json:
+                        schema:
+                            $ref: '#/components/schemas/StoryEvent'
+                required: true
+            responses:
+                "200":
+                    description: OK
+                    content:
+                        application/json:
+                            schema:
+                                $ref: '#/components/schemas/StoryEvent'
+                default:
+                    description: Default error response
+                    content:
+                        application/json:
+                            schema:
+                                $ref: '#/components/schemas/Status'
+    /api/storyShares/{token}:
+        get:
+            tags:
+                - StoryService
+            operationId: StoryService_GetSharedStory
+            parameters:
+                - name: token
+                  in: path
+                  required: true
+                  schema:
+                    type: string
+            responses:
+                "200":
+                    description: OK
+                    content:
+                        application/json:
+                            schema:
+                                $ref: '#/components/schemas/GetSharedStoryResponse'
+                default:
+                    description: Default error response
+                    content:
+                        application/json:
+                            schema:
+                                $ref: '#/components/schemas/Status'
     /api/users:
         get:
             tags:
@@ -3730,6 +4000,15 @@ components:
                         - $ref: '#/components/schemas/User'
                     description: The authenticated user.
             description: Response message for AuthService.GetCurrentUser.
+        GetSharedStoryResponse:
+            type: object
+            properties:
+                story:
+                    $ref: '#/components/schemas/Story'
+                events:
+                    type: array
+                    items:
+                        $ref: '#/components/schemas/StoryEvent'
         GetUserWebhookSigningSecretResponse:
             type: object
             properties:
@@ -4488,6 +4767,20 @@ components:
                     type: string
                     description: A token to retrieve the next page. Empty when there are no more pages.
             description: Response message for SpaceService.ListSpaces.
+        ListStoriesResponse:
+            type: object
+            properties:
+                stories:
+                    type: array
+                    items:
+                        $ref: '#/components/schemas/Story'
+        ListStoryEventsResponse:
+            type: object
+            properties:
+                events:
+                    type: array
+                    items:
+                        $ref: '#/components/schemas/StoryEvent'
         ListUserNotificationsResponse:
             type: object
             properties:
@@ -5113,6 +5406,13 @@ components:
                         Required. The complete set of REFERENCE relations for the memo. COMMENT
                          relations are rejected.
             description: Request message for MemoService.SetMemoRelations.
+        SetStoryShareRequest:
+            type: object
+            properties:
+                name:
+                    type: string
+                enabled:
+                    type: boolean
         SignInRequest:
             type: object
             properties:
@@ -5372,6 +5672,72 @@ components:
             description: |-
                 S3Config is the configuration of an S3-compatible object store.
                  Reference: https://developers.cloudflare.com/r2/examples/aws/aws-sdk-go/
+        Story:
+            type: object
+            properties:
+                name:
+                    type: string
+                uid:
+                    type: string
+                title:
+                    type: string
+                description:
+                    type: string
+                icon:
+                    type: string
+                color:
+                    type: string
+                visibility:
+                    type: string
+                createdTs:
+                    type: string
+                updatedTs:
+                    type: string
+                eventCount:
+                    type: integer
+                    format: int32
+        StoryEvent:
+            type: object
+            properties:
+                name:
+                    type: string
+                uid:
+                    type: string
+                story:
+                    type: string
+                title:
+                    type: string
+                content:
+                    type: string
+                eventDate:
+                    type: string
+                eventTime:
+                    type: string
+                tags:
+                    type: array
+                    items:
+                        type: string
+                revision:
+                    type: integer
+                    format: int32
+                attachmentUids:
+                    type: array
+                    items:
+                        type: string
+                memo:
+                    type: string
+                createdTs:
+                    type: string
+                updatedTs:
+                    type: string
+                parentEvent:
+                    type: string
+                    description: Empty for a main experience; otherwise the main event receiving this addition.
+        StoryShare:
+            type: object
+            properties:
+                token:
+                    type: string
         TestInstanceEmailSettingRequest:
             type: object
             properties:
@@ -6000,6 +6366,8 @@ tags:
          reactions, and share links.
     - name: SpaceService
       description: SpaceService manages collaborative spaces, their members and their invitations.
+    - name: StoryService
+      description: StoryService manages private life archives and their dated events.
     - name: UserService
       description: |-
         UserService manages users and the resources they own: settings, statistics,

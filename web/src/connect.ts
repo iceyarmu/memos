@@ -1,6 +1,7 @@
 import { timestampDate } from "@bufbuild/protobuf/wkt";
 import { Code, ConnectError, createClient, type Interceptor } from "@connectrpc/connect";
 import { createConnectTransport } from "@connectrpc/connect-web";
+import { StoryService } from "@/types/proto/api/story_service_pb";
 import { getAccessToken, hasStoredToken, isTokenExpired, REQUEST_TOKEN_EXPIRY_BUFFER_MS, setAccessToken } from "./auth-state";
 import { AIService } from "./types/proto/api/ai_service_pb";
 import { AttachmentService } from "./types/proto/api/attachment_service_pb";
@@ -201,3 +202,5 @@ export const spaceServiceClient = createClient(SpaceService, transport);
 
 // Configuration service clients
 export const identityProviderServiceClient = createClient(IdentityProviderService, transport);
+
+export const storyServiceClient = createClient(StoryService, transport);

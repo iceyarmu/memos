@@ -13,6 +13,7 @@ import { getDefaultDate } from "./paths";
 const DAYS_IN_WEEK = 7;
 
 export interface CalendarGridProps {
+  storyCounts?: Record<string, number>;
   /** `YYYY-MM` */
   month: string;
   /** Accessible name for the whole grid, e.g. "August 2026". */
@@ -41,6 +42,7 @@ const cornerOf = (index: number, total: number): "ss" | "se" | "es" | "ee" | und
 };
 
 export const CalendarGrid = ({
+  storyCounts,
   month,
   monthLabel,
   today,
@@ -120,6 +122,7 @@ export const CalendarGrid = ({
       >
         {days.map((day, index) => (
           <CalendarDayCell
+            storyCount={storyCounts?.[day.date] ?? 0}
             key={day.date}
             day={day}
             summary={model[day.date]}

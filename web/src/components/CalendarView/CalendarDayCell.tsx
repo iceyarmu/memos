@@ -63,6 +63,7 @@ export const layoutForCellSize = (width: number, height: number): CalendarCellLa
 };
 
 export interface CalendarDayCellProps {
+  storyCount?: number;
   day: CalendarDayCellData;
   summary?: CalendarDaySummary;
   /** Busiest day in the statistics; the cell's fill is the quarter of it this day reaches. */
@@ -161,7 +162,20 @@ const DayMark = ({
  * and lifts to the foreground under the pointer.
  */
 export const CalendarDayCell = memo(
-  ({ day, summary, maxCount, layout, pending, timeBasis, showAuthor, tabIndex, isLastColumn, isLastRow, corner }: CalendarDayCellProps) => {
+  ({
+    storyCount = 0,
+    day,
+    summary,
+    maxCount,
+    layout,
+    pending,
+    timeBasis,
+    showAuthor,
+    tabIndex,
+    isLastColumn,
+    isLastRow,
+    corner,
+  }: CalendarDayCellProps) => {
     const t = useTranslate();
     const [failedImages, setFailedImages] = useState<string[]>([]);
     const count = summary ? summary.memos.length : day.count;
@@ -195,7 +209,7 @@ export const CalendarDayCell = memo(
         to={buildCalendarPath(getMonthOfDate(day.date), day.date)}
         data-calendar-date={day.date}
         tabIndex={tabIndex}
-        aria-label={getTooltipText(count, day.date, t, timeBasis)}
+        aria-label={`${getTooltipText(count, day.date, t, timeBasis)}${storyCount ? `, ${storyCount} 条事迹` : ""}`}
         aria-current={day.isSelected ? "page" : undefined}
         className={cn(
           "group/day relative flex min-h-14 min-w-0 flex-col overflow-hidden border-border/70 px-1.5 py-2 text-start no-underline transition-colors sm:px-3 sm:min-h-20 md:min-h-[5.5rem]",
@@ -208,6 +222,11 @@ export const CalendarDayCell = memo(
           day.isCurrentMonth ? DAY_CELL_FILLS[level] : "bg-muted/25 hover:bg-muted/45",
         )}
       >
+        {storyCount > 0 && (
+          <span className="absolute bottom-1 end-1 rounded bg-primary/10 px-1 text-[10px] text-primary" title={`${storyCount} 条事迹`}>
+            ● {storyCount}
+          </span>
+        )}
         {/* The date starts on the text axis like every line below it. */}
         <span className="flex h-6 shrink-0 items-center">
           {day.isSelected && day.isToday ? <span className={OPEN_TODAY_HALO}>{numeral}</span> : numeral}

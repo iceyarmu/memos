@@ -704,6 +704,28 @@ func (s *FileServerService) getMotionPath(attachment *store.Attachment) (string,
 
 // checkAttachmentPermission verifies the user has permission to access the attachment.
 func (s *FileServerService) checkAttachmentPermission(ctx context.Context, r *http.Request, attachment *store.Attachment) (access.MemoReadClass, error) {
+	if token := r.URL.Query().Get("story_share_token"); token != "" {
+		if len(token) != 44 {
+			return access.MemoReadClassPrivate, &httphandler.Error{Code: http.StatusNotFound, Message: "share unavailable"}
+		}
+		archive, err := s.Store.GetSharedStory(ctx, token)
+		if err == nil && archive.CreatorID == attachment.CreatorID && attachment.MemoID == nil && strings.HasPrefix(attachment.Type, "image/") {
+			events, err := s.Store.ListStoryEvents(ctx, archive.CreatorID, archive.UID)
+			if err == nil {
+				for _, event := range events {
+					for _, uid := range event.AttachmentUIDs {
+						if uid == attachment.UID {
+							if _, err = s.Store.GetSharedStory(ctx, token); err == nil {
+								return access.MemoReadClassPrivate, nil
+							}
+						}
+					}
+				}
+			}
+		}
+		return access.MemoReadClassPrivate, &httphandler.Error{Code: http.StatusNotFound, Message: "shared image unavailable"}
+	}
+
 	// For unlinked attachments, only the creator or an admin can access, as in
 	// the API's GetAttachment.
 	if attachment.MemoID == nil {

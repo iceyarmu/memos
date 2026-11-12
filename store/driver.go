@@ -8,6 +8,16 @@ import (
 // Driver is an interface for store driver.
 // It contains all methods that store database driver should implement.
 type Driver interface {
+	SetStoryShare(context.Context, int32, string, *string) error
+	GetSharedStory(context.Context, string) (*Story, error)
+	ListStoryEvents(context.Context, int32, string) ([]*StoryEvent, error)
+	SaveStoryEvent(context.Context, int32, *StoryEvent, bool) error
+	DeleteStoryEvent(context.Context, int32, string, int32) error
+	UpdateStory(context.Context, *Story) error
+	DeleteStory(context.Context, int32, string) error
+
+	CreateStory(ctx context.Context, story *Story) error
+	ListStories(ctx context.Context, creatorID int32) ([]*Story, error)
 	GetDB() *sql.DB
 	Close() error
 
