@@ -193,3 +193,5 @@ CREATE TABLE `story_event_attachment` (position INTEGER NOT NULL DEFAULT 0,`even
 
 ALTER TABLE story ADD COLUMN share_token VARCHAR(255) DEFAULT NULL;
 CREATE UNIQUE INDEX idx_story_share_token ON story(share_token);
+
+ALTER TABLE story ADD COLUMN interval_unit VARCHAR(8) NOT NULL DEFAULT 'days';

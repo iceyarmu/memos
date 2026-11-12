@@ -36,6 +36,7 @@ type Story struct {
 	CreatedTs     int64                  `protobuf:"varint,8,opt,name=created_ts,json=createdTs,proto3" json:"created_ts,omitempty"`
 	UpdatedTs     int64                  `protobuf:"varint,9,opt,name=updated_ts,json=updatedTs,proto3" json:"updated_ts,omitempty"`
 	EventCount    int32                  `protobuf:"varint,10,opt,name=event_count,json=eventCount,proto3" json:"event_count,omitempty"`
+	IntervalUnit  string                 `protobuf:"bytes,11,opt,name=interval_unit,json=intervalUnit,proto3" json:"interval_unit,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
 }
@@ -138,6 +139,13 @@ func (x *Story) GetEventCount() int32 {
 		return x.EventCount
 	}
 	return 0
+}
+
+func (x *Story) GetIntervalUnit() string {
+	if x != nil {
+		return x.IntervalUnit
+	}
+	return ""
 }
 
 type StoryEvent struct {
@@ -949,7 +957,7 @@ var File_api_story_service_proto protoreflect.FileDescriptor
 
 const file_api_story_service_proto_rawDesc = "" +
 	"\n" +
-	"\x17api/story_service.proto\x12\tmemos.api\x1a\x1cgoogle/api/annotations.proto\x1a\x1bgoogle/protobuf/empty.proto\x1a google/protobuf/field_mask.proto\"\x8e\x02\n" +
+	"\x17api/story_service.proto\x12\tmemos.api\x1a\x1cgoogle/api/annotations.proto\x1a\x1bgoogle/protobuf/empty.proto\x1a google/protobuf/field_mask.proto\"\xb3\x02\n" +
 	"\x05Story\x12\x12\n" +
 	"\x04name\x18\x01 \x01(\tR\x04name\x12\x10\n" +
 	"\x03uid\x18\x02 \x01(\tR\x03uid\x12\x14\n" +
@@ -966,7 +974,8 @@ const file_api_story_service_proto_rawDesc = "" +
 	"updated_ts\x18\t \x01(\x03R\tupdatedTs\x12\x1f\n" +
 	"\vevent_count\x18\n" +
 	" \x01(\x05R\n" +
-	"eventCount\"\x84\x03\n" +
+	"eventCount\x12#\n" +
+	"\rinterval_unit\x18\v \x01(\tR\fintervalUnit\"\x84\x03\n" +
 	"\n" +
 	"StoryEvent\x12\x12\n" +
 	"\x04name\x18\x01 \x01(\tR\x04name\x12\x10\n" +

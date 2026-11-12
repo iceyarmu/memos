@@ -5696,6 +5696,8 @@ components:
                 eventCount:
                     type: integer
                     format: int32
+                intervalUnit:
+                    type: string
         StoryEvent:
             type: object
             properties:

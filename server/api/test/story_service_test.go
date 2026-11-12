@@ -113,3 +113,36 @@ func TestStoriesEventLifecycle(t *testing.T) {
 	require.NoError(t, ts.Store.GetDriver().GetDB().QueryRowContext(ctx, "SELECT COUNT(*) FROM story_event").Scan(&count))
 	require.Zero(t, count)
 }
+
+func TestStoryAppearancePersistence(t *testing.T) {
+	ctx := context.Background()
+	ts := NewTestService(t)
+	defer ts.Cleanup()
+	owner, err := ts.CreateRegularUser(ctx, "appearance-owner")
+	require.NoError(t, err)
+	own := ts.CreateUserContext(ctx, owner.ID)
+	story, err := ts.Service.CreateStory(own, &apipb.CreateStoryRequest{Story: &apipb.Story{Title: "Archive"}})
+	require.NoError(t, err)
+	require.Equal(t, "days", story.IntervalUnit)
+	story.Icon = "🎓"
+	story.Color = "#a855f7"
+	story.IntervalUnit = "hours"
+	_, err = ts.Service.UpdateStory(own, &apipb.UpdateStoryRequest{Story: story})
+	require.NoError(t, err)
+	listed, err := ts.Service.ListStories(own, &apipb.ListStoriesRequest{})
+	require.NoError(t, err)
+	require.Equal(t, "🎓", listed.Stories[0].Icon)
+	require.Equal(t, "#a855f7", listed.Stories[0].Color)
+	require.Equal(t, "hours", listed.Stories[0].IntervalUnit)
+	share, err := ts.Service.SetStoryShare(own, &apipb.SetStoryShareRequest{Name: story.Name, Enabled: true})
+	require.NoError(t, err)
+	shared, err := ts.Service.GetSharedStory(ctx, &apipb.GetSharedStoryRequest{Token: share.Token})
+	require.NoError(t, err)
+	require.Equal(t, "hours", shared.Story.IntervalUnit)
+	require.Equal(t, "#a855f7", shared.Story.Color)
+	story.IntervalUnit = "weeks"
+	_, err = ts.Service.UpdateStory(own, &apipb.UpdateStoryRequest{Story: story})
+	require.Equal(t, codes.InvalidArgument, status.Code(err))
+	_, err = ts.Service.CreateStory(own, &apipb.CreateStoryRequest{Story: &apipb.Story{Title: "Bad", IntervalUnit: "weeks"}})
+	require.Equal(t, codes.InvalidArgument, status.Code(err))
+}

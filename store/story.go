@@ -9,14 +9,15 @@ import (
 
 // Story is a private life archive owned by one user.
 type Story struct {
-	UID         string
-	CreatorID   int32
-	Title       string
-	Description string
-	Icon        string
-	Color       string
-	CreatedTs   int64
-	UpdatedTs   int64
+	IntervalUnit string
+	UID          string
+	CreatorID    int32
+	Title        string
+	Description  string
+	Icon         string
+	Color        string
+	CreatedTs    int64
+	UpdatedTs    int64
 }
 
 // CreateStory persists a private archive.

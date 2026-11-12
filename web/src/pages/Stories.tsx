@@ -1,20 +1,39 @@
 import { useQueryClient } from "@tanstack/react-query";
-import { BookHeartIcon, PlusIcon } from "lucide-react";
+import { BookHeartIcon, MoreVerticalIcon, PencilIcon, PlusIcon, Trash2Icon } from "lucide-react";
 import { useEffect, useState } from "react";
 import { useSearchParams } from "react-router-dom";
+import CustomIconPicker from "@/components/CustomIconPicker";
 import { uploadService } from "@/components/MemoEditor/edit/services/uploadService";
+import StoryMemoLink from "@/components/StoryMemoLink";
+import StoryMemoPicker from "@/components/StoryMemoPicker";
+import StoryTimeline from "@/components/StoryTimeline";
 import { Button } from "@/components/ui/button";
 import { Dialog, DialogContent, DialogTitle } from "@/components/ui/dialog";
-import { storyServiceClient } from "@/connect";
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuSeparator,
+  DropdownMenuTrigger,
+} from "@/components/ui/dropdown-menu";
+import { memoServiceClient, storyServiceClient } from "@/connect";
 import useCurrentUser from "@/hooks/useCurrentUser";
 import { storyKeys, useStories, useStoryEvents } from "@/hooks/useStories";
+import { storyMemoName } from "@/lib/story-memo";
 import type { Story, StoryEvent } from "@/types/proto/api/story_service_pb";
 
 const Stories = () => {
   const client = useQueryClient();
   const archives = useStories();
-  const [params] = useSearchParams();
-  const [selected, setSelected] = useState<string | undefined>(params.get("archive") ?? undefined);
+  const [params, setParams] = useSearchParams();
+  const selected = params.get("archive") ?? undefined;
+  const setSelected = (name: string | undefined) =>
+    setParams((previous) => {
+      const next = new URLSearchParams(previous);
+      if (name) next.set("archive", name);
+      else next.delete("archive");
+      return next;
+    });
   const events = useStoryEvents(selected);
   const [form, setForm] = useState<{ kind: "archive" | "event"; archive?: Story; event?: StoryEvent; parentEvent?: string }>();
   const [shareURL, setShareURL] = useState("");
@@ -82,7 +101,7 @@ const Stories = () => {
             </Button>
           )}
           <h1 className="flex items-center gap-2 text-2xl font-semibold">
-            <BookHeartIcon className="size-6" />
+            {active ? <span>{active.icon}</span> : <BookHeartIcon className="size-6" />}
             {active?.title ?? "事迹"}
           </h1>
           <p className="mt-2 text-sm text-muted-foreground">{active?.description ?? "珍藏人生中的经历与转折。"}</p>
@@ -160,21 +179,57 @@ const Stories = () => {
               <input readOnly value={shareURL} className="mt-1 w-full rounded border p-2" onFocus={(e) => e.target.select()} />
             </label>
           )}
-          <section className="mx-auto w-full max-w-3xl space-y-5 border-l border-border pl-5">
-            {entries.map((e) => (
-              <article key={e.name} className={`rounded-xl border border-border bg-card p-4 ${e.parentEvent ? "ml-5" : ""}`}>
-                <time className="text-xs text-muted-foreground">
-                  {e.eventDate} {e.eventTime}
-                </time>
-                {e.parentEvent && <p className="text-xs text-muted-foreground">追加记录</p>}
-                {e.memo && (
-                  <a className="text-sm text-primary underline" href={`/${e.memo}`}>
-                    查看关联 Memo
-                  </a>
-                )}
-                <h2 className="mt-2 font-medium">{e.title || "记录这一刻"}</h2>
+          <StoryTimeline entries={entries} color={active?.color} unit={active?.intervalUnit}>
+            {(e) => (
+              <article
+                key={e.name}
+                style={{ borderLeftColor: active?.color }}
+                className="rounded-xl border border-border border-l-[3px] bg-card p-4 shadow-sm"
+              >
+                <header className="flex items-start gap-2">
+                  <DropdownMenu>
+                    <DropdownMenuTrigger
+                      render={
+                        <Button
+                          type="button"
+                          variant="ghost"
+                          size="icon"
+                          className="-ml-2 -mt-1 shrink-0"
+                          aria-label={`经历操作：${e.title || "记录这一刻"}`}
+                          disabled={busy}
+                        />
+                      }
+                    >
+                      <MoreVerticalIcon className="size-4" />
+                    </DropdownMenuTrigger>
+                    <DropdownMenuContent align="start">
+                      {!e.parentEvent && (
+                        <DropdownMenuItem onClick={() => setForm({ kind: "event", parentEvent: e.uid })}>
+                          <PlusIcon />
+                          追加记录
+                        </DropdownMenuItem>
+                      )}
+                      <DropdownMenuItem onClick={() => setForm({ kind: "event", event: e })}>
+                        <PencilIcon />
+                        编辑
+                      </DropdownMenuItem>
+                      <DropdownMenuSeparator />
+                      <DropdownMenuItem variant="destructive" onClick={() => void remove(e)}>
+                        <Trash2Icon />
+                        删除
+                      </DropdownMenuItem>
+                    </DropdownMenuContent>
+                  </DropdownMenu>
+                  <div className="min-w-0 flex-1">
+                    <h2 className="break-words font-bold leading-6">{e.title || "记录这一刻"}</h2>
+                    <time className="mt-1 block text-xs text-muted-foreground">
+                      {e.parentEvent ? "追加 · " : ""}
+                      {e.eventDate} {e.eventTime}
+                    </time>
+                  </div>
+                </header>
                 <p className="mt-2 whitespace-pre-wrap break-words text-sm leading-6">{e.content}</p>
-                <div className="mt-3 grid grid-cols-3 gap-2">
+                <div className="grid grid-cols-3 gap-2 empty:hidden [&:not(:empty)]:mt-3">
                   {e.attachmentUids.map((uid) => (
                     <a key={uid} href={`/file/attachments/${encodeURIComponent(uid)}`} target="_blank" rel="noreferrer">
                       <img
@@ -186,28 +241,18 @@ const Stories = () => {
                     </a>
                   ))}
                 </div>
-                <div className="mt-3 flex flex-wrap items-center gap-2">
+                <div className="flex flex-wrap items-center gap-2 empty:hidden [&:not(:empty)]:mt-3">
                   {e.tags.map((t) => (
                     <button key={t} onClick={() => setTag(t)} className="text-xs text-muted-foreground">
                       #{t}
                     </button>
                   ))}
-                  {!e.parentEvent && (
-                    <Button variant="ghost" onClick={() => setForm({ kind: "event", parentEvent: e.uid })}>
-                      追加记录
-                    </Button>
-                  )}
-                  <Button variant="ghost" onClick={() => setForm({ kind: "event", event: e })}>
-                    编辑
-                  </Button>
-                  <Button disabled={busy} variant="ghost" onClick={() => void remove(e)}>
-                    删除
-                  </Button>
                 </div>
+                {e.memo && <StoryMemoLink name={e.memo} from={`/stories?archive=${encodeURIComponent(selected ?? "")}`} />}
               </article>
-            ))}
-            {entries.length === 0 && !events.isLoading && <p>还没有符合条件的经历。</p>}
-          </section>
+            )}
+          </StoryTimeline>
+          {entries.length === 0 && !events.isLoading && <p>还没有符合条件的经历。</p>}
         </>
       )}
       {form && (
@@ -253,10 +298,11 @@ const EntryForm = ({
   const [tags, setTags] = useState(event?.tags.join("，") ?? "");
   const [icon, setIcon] = useState(archive?.icon ?? "📖");
   const [color, setColor] = useState(archive?.color ?? "#55A9BE");
+  const [intervalUnit, setIntervalUnit] = useState(archive?.intervalUnit || "days");
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState("");
   const [images, setImages] = useState(event?.attachmentUids ?? []);
-  const [memo, setMemo] = useState(event?.memo ?? "");
+  const [memo, setMemo] = useState(event?.memo.replace(/^memos\//, "") ?? "");
   const [restored, setRestored] = useState(false);
   useEffect(() => {
     try {
@@ -271,6 +317,7 @@ const EntryForm = ({
           setTags(d.tags);
           setIcon(d.icon);
           setColor(d.color);
+          setIntervalUnit(d.intervalUnit ?? "days");
           setImages(d.images);
           setMemo(d.memo ?? "");
         } else {
@@ -293,13 +340,13 @@ const EntryForm = ({
     try {
       localStorage.setItem(
         draftKey,
-        JSON.stringify({ title, content, date, time, tags, icon, color, images, memo, revision: event?.revision ?? 0 }),
+        JSON.stringify({ title, content, date, time, tags, icon, color, intervalUnit, images, memo, revision: event?.revision ?? 0 }),
       );
     } catch {
       setError("草稿无法保存，请不要关闭页面。");
     }
     return () => window.removeEventListener("beforeunload", leave);
-  }, [restored, draftKey, title, content, date, time, tags, icon, color, images, memo, event?.revision]);
+  }, [restored, draftKey, title, content, date, time, tags, icon, color, intervalUnit, images, memo, event?.revision]);
   const close = () => {
     if (!busy && confirm("关闭编辑？未提交内容会保留为本机草稿。")) onClose();
   };
@@ -326,10 +373,20 @@ const EntryForm = ({
     setError("");
     try {
       if (kind === "archive") {
-        const story = { name: archive?.name, title, description: content, icon, color };
+        const story = { name: archive?.name, title, description: content, icon, color, intervalUnit };
         if (archive) await storyServiceClient.updateStory({ story });
         else await storyServiceClient.createStory({ story });
       } else {
+        const memoName = storyMemoName(memo, window.location.origin);
+        if (memoName === undefined) throw new Error("请输入有效的 Memo ID 或本站 Memo 链接。");
+        if (memoName) {
+          try {
+            const linked = await memoServiceClient.getMemo({ name: memoName });
+            if (linked.creator !== user?.name) throw new Error("只能关联自己的 Memo。");
+          } catch {
+            throw new Error("无法关联此 Memo，请确认它存在、属于自己且网络连接正常。");
+          }
+        }
         const value = {
           name: event?.name,
           story: parent,
@@ -344,7 +401,7 @@ const EntryForm = ({
           revision: event?.revision ?? 0,
           attachmentUids: images,
           parentEvent: event?.parentEvent ?? parentEvent ?? "",
-          memo,
+          memo: memoName,
         };
         if (event) await storyServiceClient.updateStoryEvent({ event: value });
         else await storyServiceClient.createStoryEvent({ parent, event: value });
@@ -396,15 +453,32 @@ const EntryForm = ({
               </div>
             ) : (
               <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
+                <div>
+                  <p className="mb-2 text-sm">档案 Emoji</p>
+                  <CustomIconPicker
+                    emojiOnly
+                    label="选择档案 Emoji"
+                    value={{ value: { case: "emoji", value: icon } }}
+                    onChange={(next) => setIcon(next?.value.case === "emoji" ? next.value.value : "📖")}
+                  />
+                </div>
                 <label>
-                  图标
-                  <input className={field} value={icon} onChange={(e) => setIcon(e.target.value)} />
-                </label>
-                <label>
-                  颜色
+                  线条颜色
                   <input type="color" className={field} value={color} onChange={(e) => setColor(e.target.value)} />
                 </label>
               </div>
+            )}
+            {kind === "archive" && (
+              <label className="block">
+                间隔单位
+                <select aria-label="间隔单位" className={field} value={intervalUnit} onChange={(e) => setIntervalUnit(e.target.value)}>
+                  <option value="days">天数</option>
+                  <option value="hours">小时</option>
+                </select>
+                <p className="mt-1 text-xs text-muted-foreground">
+                  天数按日期计算；小时按填写的时间计算，最多保留一位小数。未填写时间时显示天数。
+                </p>
+              </label>
             )}
             <label className="block">
               {kind === "archive" ? "简介" : "正文"}
@@ -428,17 +502,7 @@ const EntryForm = ({
                 {error}
               </p>
             )}
-            {kind === "event" && (
-              <label className="block">
-                关联 Memo
-                <input
-                  className={field}
-                  value={memo}
-                  onChange={(e) => setMemo(e.target.value)}
-                  placeholder="memos/…（仅支持自己的 Memo）"
-                />
-              </label>
-            )}
+            {kind === "event" && <StoryMemoPicker value={memo} onChange={setMemo} />}
             {kind === "event" && (
               <div>
                 <label>

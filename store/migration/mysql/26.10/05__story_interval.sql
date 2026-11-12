@@ -1,0 +1,1 @@
+ALTER TABLE story ADD COLUMN interval_unit VARCHAR(8) NOT NULL DEFAULT 'days';

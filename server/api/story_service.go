@@ -53,6 +53,13 @@ func (s *APIService) CreateStory(ctx context.Context, request *apipb.CreateStory
 	if input.Visibility != "" && input.Visibility != "PRIVATE" {
 		return nil, status.Errorf(codes.InvalidArgument, "only private archives are supported")
 	}
+	unit := input.IntervalUnit
+	if unit == "" {
+		unit = "days"
+	}
+	if unit != "days" && unit != "hours" {
+		return nil, status.Errorf(codes.InvalidArgument, "invalid interval unit")
+	}
 	icon, color := input.Icon, input.Color
 	if icon == "" {
 		icon = "📖"
@@ -63,7 +70,7 @@ func (s *APIService) CreateStory(ctx context.Context, request *apipb.CreateStory
 	if utf8.RuneCountInString(icon) > 16 || !regexp.MustCompile(`^#[0-9a-fA-F]{6}$`).MatchString(color) {
 		return nil, status.Errorf(codes.InvalidArgument, "invalid icon or color")
 	}
-	item := &store.Story{UID: shortuuid.New(), CreatorID: user.ID, Title: strings.TrimSpace(input.Title), Description: input.Description, Icon: icon, Color: color}
+	item := &store.Story{UID: shortuuid.New(), CreatorID: user.ID, Title: strings.TrimSpace(input.Title), Description: input.Description, Icon: icon, Color: color, IntervalUnit: unit}
 	if err := s.Store.CreateStory(ctx, item); err != nil {
 		return nil, status.Errorf(codes.Internal, "failed to create story")
 	}
@@ -304,7 +311,7 @@ func (s *APIService) UpdateStory(ctx context.Context, r *apipb.UpdateStoryReques
 	if item == nil {
 		return nil, status.Errorf(codes.NotFound, "archive unavailable")
 	}
-	paths := []string{"title", "description", "icon", "color"}
+	paths := []string{"title", "description", "icon", "color", "interval_unit"}
 	if r.UpdateMask != nil {
 		paths = r.UpdateMask.Paths
 	}
@@ -316,6 +323,10 @@ func (s *APIService) UpdateStory(ctx context.Context, r *apipb.UpdateStoryReques
 			item.Description = input.Description
 		case "icon":
 			item.Icon = input.Icon
+		case "interval_unit":
+			if input.IntervalUnit != "" {
+				item.IntervalUnit = input.IntervalUnit
+			}
 		case "color":
 			item.Color = input.Color
 		default:
@@ -324,6 +335,9 @@ func (s *APIService) UpdateStory(ctx context.Context, r *apipb.UpdateStoryReques
 	}
 	if strings.TrimSpace(item.Title) == "" || utf8.RuneCountInString(item.Title) > 120 || utf8.RuneCountInString(item.Description) > 12000 || utf8.RuneCountInString(item.Icon) > 16 || !regexp.MustCompile(`^#[0-9a-fA-F]{6}$`).MatchString(item.Color) {
 		return nil, status.Errorf(codes.InvalidArgument, "invalid archive presentation")
+	}
+	if item.IntervalUnit != "days" && item.IntervalUnit != "hours" {
+		return nil, status.Errorf(codes.InvalidArgument, "invalid interval unit")
 	}
 	if err = s.Store.UpdateStory(ctx, item); err != nil {
 		return nil, status.Errorf(codes.Internal, "failed to update archive")

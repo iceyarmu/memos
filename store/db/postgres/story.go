@@ -11,8 +11,11 @@ import (
 
 // CreateStory inserts a private archive.
 func (d *DB) CreateStory(ctx context.Context, story *store.Story) error {
+	if story.IntervalUnit == "" {
+		story.IntervalUnit = "days"
+	}
 	now := time.Now().Unix()
-	_, err := d.db.ExecContext(ctx, "INSERT INTO story (uid,creator_id,name,description,icon,color,created_ts,updated_ts) VALUES ($1,$2,$3,$4,$5,$6,$7,$8)", story.UID, story.CreatorID, story.Title, story.Description, story.Icon, story.Color, now, now)
+	_, err := d.db.ExecContext(ctx, "INSERT INTO story (uid,creator_id,name,description,icon,color,created_ts,updated_ts,interval_unit) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9)", story.UID, story.CreatorID, story.Title, story.Description, story.Icon, story.Color, now, now, story.IntervalUnit)
 	if err == nil {
 		story.CreatedTs = now
 		story.UpdatedTs = now
@@ -22,7 +25,7 @@ func (d *DB) CreateStory(ctx context.Context, story *store.Story) error {
 
 // ListStories reads only archives owned by the requested user.
 func (d *DB) ListStories(ctx context.Context, creatorID int32) ([]*store.Story, error) {
-	rows, err := d.db.QueryContext(ctx, "SELECT uid,creator_id,name,description,icon,color,created_ts,updated_ts FROM story WHERE creator_id = $1 ORDER BY updated_ts DESC,id DESC", creatorID)
+	rows, err := d.db.QueryContext(ctx, "SELECT uid,creator_id,name,description,icon,color,created_ts,updated_ts,interval_unit FROM story WHERE creator_id = $1 ORDER BY updated_ts DESC,id DESC", creatorID)
 	if err != nil {
 		return nil, err
 	}
@@ -30,7 +33,7 @@ func (d *DB) ListStories(ctx context.Context, creatorID int32) ([]*store.Story, 
 	result := []*store.Story{}
 	for rows.Next() {
 		item := &store.Story{}
-		if err := rows.Scan(&item.UID, &item.CreatorID, &item.Title, &item.Description, &item.Icon, &item.Color, &item.CreatedTs, &item.UpdatedTs); err != nil {
+		if err := rows.Scan(&item.UID, &item.CreatorID, &item.Title, &item.Description, &item.Icon, &item.Color, &item.CreatedTs, &item.UpdatedTs, &item.IntervalUnit); err != nil {
 			return nil, err
 		}
 		result = append(result, item)
@@ -157,7 +160,7 @@ func (d *DB) SaveStoryEvent(ctx context.Context, owner int32, e *store.StoryEven
 	return nil
 }
 func (d *DB) UpdateStory(ctx context.Context, s *store.Story) error {
-	r, err := d.db.ExecContext(ctx, `UPDATE story SET name=$1,description=$2,icon=$3,color=$4,updated_ts=$5 WHERE uid=$6 AND creator_id=$7`, s.Title, s.Description, s.Icon, s.Color, time.Now().Unix(), s.UID, s.CreatorID)
+	r, err := d.db.ExecContext(ctx, `UPDATE story SET name=$1,description=$2,icon=$3,color=$4,updated_ts=$5,interval_unit=$6 WHERE uid=$7 AND creator_id=$8`, s.Title, s.Description, s.Icon, s.Color, time.Now().Unix(), s.IntervalUnit, s.UID, s.CreatorID)
 	if err != nil {
 		return err
 	}
@@ -246,6 +249,6 @@ func (d *DB) GetSharedStory(ctx context.Context, token string) (*store.Story, er
 		return nil, sql.ErrNoRows
 	}
 	s := &store.Story{}
-	err := d.db.QueryRowContext(ctx, `SELECT s.uid,s.creator_id,s.name,s.description,s.icon,s.color,s.created_ts,s.updated_ts FROM story s JOIN "user" u ON u.id=s.creator_id WHERE s.share_token=$1 AND u.row_status='NORMAL'`, token).Scan(&s.UID, &s.CreatorID, &s.Title, &s.Description, &s.Icon, &s.Color, &s.CreatedTs, &s.UpdatedTs)
+	err := d.db.QueryRowContext(ctx, `SELECT s.uid,s.creator_id,s.name,s.description,s.icon,s.color,s.created_ts,s.updated_ts,s.interval_unit FROM story s JOIN "user" u ON u.id=s.creator_id WHERE s.share_token=$1 AND u.row_status='NORMAL'`, token).Scan(&s.UID, &s.CreatorID, &s.Title, &s.Description, &s.Icon, &s.Color, &s.CreatedTs, &s.UpdatedTs, &s.IntervalUnit)
 	return s, err
 }

@@ -35,14 +35,15 @@ interface Props {
   onChange: (icon: CustomIconValue | undefined) => void;
   disabled?: boolean;
   label: string;
+  emojiOnly?: boolean;
   fallback?: LucideIcon;
 }
 
-function CustomIconPicker({ value, onChange, disabled, label, fallback = AstroidIcon }: Props) {
+function CustomIconPicker({ value, onChange, disabled, label, fallback = AstroidIcon, emojiOnly = false }: Props) {
   const t = useTranslate();
   const id = useId();
   const [open, setOpen] = useState(false);
-  const [tab, setTab] = useState("icons");
+  const [tab, setTab] = useState(emojiOnly ? "emoji" : "icons");
   const [query, setQuery] = useState("");
   const [focusedIndex, setFocusedIndex] = useState(0);
   const searchRef = useRef<HTMLInputElement>(null);
@@ -85,7 +86,7 @@ function CustomIconPicker({ value, onChange, disabled, label, fallback = Astroid
       open={open}
       onOpenChange={(next) => {
         if (next) {
-          changeTab(value?.value.case === "emoji" ? "emoji" : "icons");
+          changeTab(emojiOnly || value?.value.case === "emoji" ? "emoji" : "icons");
         }
         setOpen(next);
       }}
@@ -100,7 +101,7 @@ function CustomIconPicker({ value, onChange, disabled, label, fallback = Astroid
       <PopoverContent align="start" className="w-[290px] max-w-[calc(100vw-2rem)] p-2" aria-label={label} initialFocus={searchRef}>
         <Tabs value={tab} onValueChange={changeTab} size="sm">
           <TabsList className="mb-2" aria-label={t("space.icon.kind")}>
-            {(["icons", "emoji"] as const).map((name) => (
+            {(emojiOnly ? (["emoji"] as const) : (["icons", "emoji"] as const)).map((name) => (
               <TabsTrigger key={name} id={`${id}-${name}`} value={name} aria-controls={`${id}-panel`} className="flex-1">
                 {t(`space.icon.${name}`)}
               </TabsTrigger>
